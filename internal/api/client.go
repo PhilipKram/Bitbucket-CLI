@@ -1,16 +1,23 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/auth"
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
 )
+
+// Default HTTP client timeout. Override with BB_HTTP_TIMEOUT (seconds).
+const defaultTimeout = 30 * time.Second
 
 // Client wraps HTTP calls to the Bitbucket 2.0 API with automatic token refresh.
 type Client struct {
@@ -22,12 +29,12 @@ type Client struct {
 
 // PaginatedResponse is the standard paginated response envelope from Bitbucket.
 type PaginatedResponse struct {
-	Size     int              `json:"size"`
-	Page     int              `json:"page"`
-	PageLen  int              `json:"pagelen"`
-	Next     string           `json:"next"`
-	Previous string           `json:"previous"`
-	Values   json.RawMessage  `json:"values"`
+	Size     int             `json:"size"`
+	Page     int             `json:"page"`
+	PageLen  int             `json:"pagelen"`
+	Next     string          `json:"next"`
+	Previous string          `json:"previous"`
+	Values   json.RawMessage `json:"values"`
 }
 
 // NewClient creates an authenticated API client.
@@ -48,12 +55,34 @@ func NewClient() (*Client, error) {
 		method = config.AuthMethodOAuth // default for legacy tokens
 	}
 
+	timeout := defaultTimeout
+	if envTimeout := os.Getenv("BB_HTTP_TIMEOUT"); envTimeout != "" {
+		if secs, err := strconv.Atoi(envTimeout); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		}
+	}
+
 	return &Client{
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: timeout},
 		token:      token,
 		cfg:        cfg,
 		authMethod: method,
 	}, nil
+}
+
+// NewClientWith creates a Client from externally provided config, token, and HTTP client.
+// This is intended for testing and advanced usage where you don't want to read from disk.
+func NewClientWith(httpClient *http.Client, cfg *config.Config, token *config.TokenData) *Client {
+	method := token.AuthMethod
+	if method == "" {
+		method = config.AuthMethodOAuth
+	}
+	return &Client{
+		httpClient: httpClient,
+		token:      token,
+		cfg:        cfg,
+		authMethod: method,
+	}
 }
 
 // GetConfig returns the loaded configuration.
@@ -71,7 +100,17 @@ func (c *Client) setAuth(req *http.Request) {
 }
 
 func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	req, err := http.NewRequest(method, urlStr, body)
+	// Buffer the body so it can be replayed on 401 retry.
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
+	}
+
+	req, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +130,8 @@ func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType st
 		if err := c.refreshToken(); err != nil {
 			return nil, fmt.Errorf("session expired, please run 'bb auth login' again: %w", err)
 		}
-		// Retry the request with the new token
-		req2, err := http.NewRequest(method, urlStr, body)
+		// Retry the request with the new token and a fresh body reader
+		req2, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
 		if err != nil {
 			return nil, err
 		}
@@ -111,9 +150,14 @@ func (c *Client) refreshToken() error {
 	if cfg.OAuthKey == "" || cfg.OAuthSecret == "" {
 		return fmt.Errorf("OAuth credentials not configured")
 	}
-	newToken, err := auth.RefreshAccessToken(cfg.OAuthKey, cfg.OAuthSecret, c.token.RefreshToken)
+	oldRefresh := c.token.RefreshToken
+	newToken, err := auth.RefreshAccessToken(cfg.OAuthKey, cfg.OAuthSecret, oldRefresh)
 	if err != nil {
 		return err
+	}
+	// Preserve the existing refresh token if the server didn't return a new one
+	if newToken.RefreshToken == "" {
+		newToken.RefreshToken = oldRefresh
 	}
 	c.token = newToken
 	return config.SaveToken(newToken)

@@ -10,9 +10,11 @@ const (
 	AppName       = "bitbucket-cli"
 	BitbucketAPI  = "https://api.bitbucket.org/2.0"
 	AuthURL       = "https://bitbucket.org/site/oauth2/authorize"
-	TokenURL      = "https://bitbucket.org/site/oauth2/access_token"
 	DefaultFormat = "table"
 )
+
+// TokenURL is a variable so it can be overridden in tests.
+var TokenURL = "https://bitbucket.org/site/oauth2/access_token"
 
 type Config struct {
 	DefaultWorkspace string `json:"default_workspace"`
@@ -40,11 +42,11 @@ type TokenData struct {
 }
 
 func ConfigDir() (string, error) {
-	home, err := os.UserHomeDir()
+	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".config", AppName)
+	dir := filepath.Join(base, AppName)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}

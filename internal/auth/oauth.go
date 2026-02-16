@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -40,7 +43,8 @@ func Login(clientID, clientSecret string) (*config.TokenData, error) {
 			if errMsg == "" {
 				errMsg = "no authorization code received"
 			}
-			fmt.Fprintf(w, "<html><body><h2>Authentication Failed</h2><p>%s</p><p>You can close this window.</p></body></html>", errMsg)
+			// HTML-escape user-controlled error messages to prevent injection
+			fmt.Fprintf(w, "<html><body><h2>Authentication Failed</h2><p>%s</p><p>You can close this window.</p></body></html>", html.EscapeString(errMsg))
 			errCh <- fmt.Errorf("authorization failed: %s", errMsg)
 			return
 		}
@@ -59,9 +63,17 @@ func Login(clientID, clientSecret string) (*config.TokenData, error) {
 	authURL := fmt.Sprintf("%s?client_id=%s&response_type=code&redirect_uri=%s",
 		config.AuthURL, url.QueryEscape(clientID), url.QueryEscape(redirectURI))
 
-	fmt.Println("Open this URL in your browser to authenticate:")
-	fmt.Println()
-	fmt.Println("  " + authURL)
+	// Attempt to open the browser automatically; fall back to printing the URL.
+	if err := openBrowser(authURL); err != nil {
+		fmt.Println("Open this URL in your browser to authenticate:")
+		fmt.Println()
+		fmt.Println("  " + authURL)
+	} else {
+		fmt.Println("Opened browser for authentication.")
+		fmt.Println("If it didn't open, visit:")
+		fmt.Println()
+		fmt.Println("  " + authURL)
+	}
 	fmt.Println()
 	fmt.Println("Waiting for authorization...")
 
@@ -149,4 +161,18 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*config.To
 		return nil, fmt.Errorf("failed to parse token response: %w", err)
 	}
 	return &token, nil
+}
+
+// openBrowser attempts to open the given URL in the user's default browser.
+func openBrowser(url string) error {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "linux":
+		return exec.Command("xdg-open", url).Start()
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
 }

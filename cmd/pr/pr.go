@@ -507,17 +507,71 @@ func newCmdActivity() *cobra.Command {
 				return err
 			}
 
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
 			if jsonOut {
 				var raw interface{}
-				json.Unmarshal(data, &raw)
+				if err := json.Unmarshal(paginated.Values, &raw); err != nil {
+					return err
+				}
 				output.PrintJSON(raw)
 				return nil
 			}
 
-			// Activity is a heterogeneous list; display raw JSON for now
-			var raw interface{}
-			json.Unmarshal(data, &raw)
-			output.PrintJSON(raw)
+			// Activity is a heterogeneous list; render a summary table
+			var activities []struct {
+				Update *struct {
+					State  string `json:"state"`
+					Author struct {
+						DisplayName string `json:"display_name"`
+					} `json:"author"`
+					Date string `json:"date"`
+				} `json:"update"`
+				Approval *struct {
+					User struct {
+						DisplayName string `json:"display_name"`
+					} `json:"user"`
+					Date string `json:"date"`
+				} `json:"approval"`
+				Comment *struct {
+					User struct {
+						DisplayName string `json:"display_name"`
+					} `json:"user"`
+					Content struct {
+						Raw string `json:"raw"`
+					} `json:"content"`
+					CreatedOn string `json:"created_on"`
+				} `json:"comment"`
+			}
+			if err := json.Unmarshal(paginated.Values, &activities); err != nil {
+				return err
+			}
+
+			for _, a := range activities {
+				switch {
+				case a.Update != nil:
+					date := a.Update.Date
+					if len(date) > 10 {
+						date = date[:10]
+					}
+					output.PrintMessage("[%s] %s changed state to %s", date, a.Update.Author.DisplayName, a.Update.State)
+				case a.Approval != nil:
+					date := a.Approval.Date
+					if len(date) > 10 {
+						date = date[:10]
+					}
+					output.PrintMessage("[%s] %s approved", date, a.Approval.User.DisplayName)
+				case a.Comment != nil:
+					date := a.Comment.CreatedOn
+					if len(date) > 10 {
+						date = date[:10]
+					}
+					output.PrintMessage("[%s] %s commented: %s", date, a.Comment.User.DisplayName, output.Truncate(a.Comment.Content.Raw, 80))
+				}
+			}
 			return nil
 		},
 	}

@@ -42,8 +42,6 @@ func newCmdLogin() *cobra.Command {
 	var username string
 	var clientID string
 	var clientSecret string
-	var gitProtocol string
-
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Bitbucket",
@@ -80,7 +78,7 @@ For non-interactive use, pass flags:
 			}
 
 			// Interactive: prompt user to choose
-			return loginInteractive(clientID, clientSecret, gitProtocol)
+			return loginInteractive(clientID, clientSecret)
 		},
 	}
 
@@ -89,13 +87,11 @@ For non-interactive use, pass flags:
 	cmd.Flags().StringVarP(&username, "username", "u", "", "Bitbucket username (for --with-token)")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth consumer key")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "OAuth consumer secret")
-	cmd.Flags().StringVarP(&gitProtocol, "git-protocol", "p", "", "Preferred git protocol (https, ssh)")
-
 	return cmd
 }
 
 // loginInteractive prompts the user to choose an auth method, then collects credentials.
-func loginInteractive(clientID, clientSecret, gitProtocol string) error {
+func loginInteractive(clientID, clientSecret string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Check if already authenticated
@@ -350,8 +346,7 @@ func newCmdStatus() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil || token.AccessToken == "" {
-				fmt.Fprintln(os.Stderr, "Not logged in. Run 'bb auth login' to authenticate.")
-				os.Exit(1)
+				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
 			}
 
 			method := token.AuthMethod
