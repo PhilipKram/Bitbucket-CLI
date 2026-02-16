@@ -1,0 +1,323 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/PhilipKram/bitbucket-cli/internal/auth"
+	"github.com/PhilipKram/bitbucket-cli/internal/config"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
+)
+
+// Default HTTP client timeout. Override with BB_HTTP_TIMEOUT (seconds).
+const defaultTimeout = 30 * time.Second
+
+// Client wraps HTTP calls to the Bitbucket 2.0 API with automatic token refresh.
+type Client struct {
+	httpClient *http.Client
+	token      *config.TokenData
+	cfg        *config.Config
+}
+
+// PaginatedResponse is the standard paginated response envelope from Bitbucket.
+type PaginatedResponse struct {
+	Size     int             `json:"size"`
+	Page     int             `json:"page"`
+	PageLen  int             `json:"pagelen"`
+	Next     string          `json:"next"`
+	Previous string          `json:"previous"`
+	Values   json.RawMessage `json:"values"`
+}
+
+// NewClient creates an authenticated API client using OAuth Bearer tokens.
+func NewClient() (*Client, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	token, err := config.LoadToken()
+	if err != nil {
+		return nil, fmt.Errorf("not authenticated. Run 'bb auth login' first")
+	}
+
+	timeout := defaultTimeout
+	if envTimeout := os.Getenv("BB_HTTP_TIMEOUT"); envTimeout != "" {
+		if secs, err := strconv.Atoi(envTimeout); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		}
+	}
+
+	return &Client{
+		httpClient: &http.Client{Timeout: timeout},
+		token:      token,
+		cfg:        cfg,
+	}, nil
+}
+
+// NewClientWith creates a Client from externally provided config, token, and HTTP client.
+// This is intended for testing and advanced usage where you don't want to read from disk.
+func NewClientWith(httpClient *http.Client, cfg *config.Config, token *config.TokenData) *Client {
+	return &Client{
+		httpClient: httpClient,
+		token:      token,
+		cfg:        cfg,
+	}
+}
+
+// GetConfig returns the loaded configuration.
+func (c *Client) GetConfig() *config.Config {
+	return c.cfg
+}
+
+func (c *Client) setAuth(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+c.token.AccessToken)
+}
+
+func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
+	// Buffer the body so it can be replayed on 401 retry.
+	var bodyBytes []byte
+	if body != nil {
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
+	}
+
+	req, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.NetworkError(err)
+	}
+
+	// Attempt token refresh on 401
+	if resp.StatusCode == http.StatusUnauthorized && c.token.RefreshToken != "" {
+		resp.Body.Close()
+		if err := c.refreshToken(); err != nil {
+			return nil, fmt.Errorf("session expired, please run 'bb auth login' again: %w", err)
+		}
+		// Retry the request with the new token and a fresh body reader
+		req2, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, err
+		}
+		c.setAuth(req2)
+		if contentType != "" {
+			req2.Header.Set("Content-Type", contentType)
+		}
+		resp2, err := c.httpClient.Do(req2)
+		if err != nil {
+			return nil, errors.NetworkError(err)
+		}
+		return resp2, nil
+	}
+
+	return resp, nil
+}
+
+func (c *Client) refreshToken() error {
+	cfg := c.cfg
+	if cfg.OAuthKey == "" || cfg.OAuthSecret == "" {
+		return fmt.Errorf("OAuth credentials not configured")
+	}
+	oldRefresh := c.token.RefreshToken
+	newToken, err := auth.RefreshAccessToken(cfg.OAuthKey, cfg.OAuthSecret, oldRefresh)
+	if err != nil {
+		return err
+	}
+	// Preserve the existing refresh token if the server didn't return a new one
+	if newToken.RefreshToken == "" {
+		newToken.RefreshToken = oldRefresh
+	}
+	c.token = newToken
+	return config.SaveToken(newToken)
+}
+
+// Get performs a GET request to the Bitbucket API.
+func (c *Client) Get(path string) ([]byte, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("GET", u, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// GetRaw performs a GET to an absolute URL (for pagination "next" links).
+func (c *Client) GetRaw(rawURL string) ([]byte, error) {
+	resp, err := c.doRequest("GET", rawURL, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// Post performs a POST request. If jsonBody is non-empty, it is sent as a JSON
+// body with Content-Type "application/json"; otherwise, no request body or
+// Content-Type header is sent.
+func (c *Client) Post(path string, jsonBody string) ([]byte, error) {
+	u := config.BitbucketAPI + path
+	var body io.Reader
+	var contentType string
+	if jsonBody != "" {
+		body = strings.NewReader(jsonBody)
+		contentType = "application/json"
+	}
+	resp, err := c.doRequest("POST", u, body, contentType)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// PostForm performs a POST with form-encoded body.
+func (c *Client) PostForm(path string, data url.Values) ([]byte, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("POST", u, strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// Put performs a PUT with JSON body.
+func (c *Client) Put(path string, jsonBody string) ([]byte, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("PUT", u, strings.NewReader(jsonBody), "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// PostMultipart performs a multipart/form-data POST request, typically used for file uploads.
+// It streams the file content through an io.Pipe to avoid buffering the entire file in memory.
+func (c *Client) PostMultipart(path, fieldName, fileName string, fileReader io.Reader) ([]byte, error) {
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	// Write multipart data in a goroutine so the pipe reader can stream it
+	errCh := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		part, err := writer.CreateFormFile(fieldName, fileName)
+		if err != nil {
+			errCh <- fmt.Errorf("failed to create multipart form: %w", err)
+			return
+		}
+		if _, err := io.Copy(part, fileReader); err != nil {
+			errCh <- fmt.Errorf("failed to write file to multipart form: %w", err)
+			return
+		}
+		errCh <- writer.Close()
+	}()
+
+	u := config.BitbucketAPI + path
+	contentType := writer.FormDataContentType()
+
+	// Build the request manually since doRequest buffers the body (needed for 401 retry),
+	// but for large uploads we accept that a 401 retry will fail.
+	req, err := http.NewRequest("POST", u, pr)
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.NetworkError(err)
+	}
+	defer resp.Body.Close()
+
+	// Check for multipart writer errors
+	if writeErr := <-errCh; writeErr != nil {
+		return nil, writeErr
+	}
+
+	// Upload often returns 201 Created with no body
+	if resp.StatusCode == http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return body, nil
+	}
+	return handleResponse(resp)
+}
+
+// Delete performs a DELETE request.
+func (c *Client) Delete(path string) ([]byte, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("DELETE", u, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	// DELETE often returns 204 No Content
+	if resp.StatusCode == http.StatusNoContent {
+		return nil, nil
+	}
+	return handleResponse(resp)
+}
+
+// GetPaginated fetches a single page of paginated results from the Bitbucket API
+// and decodes them directly into a slice of T using a streaming JSON decoder.
+func GetPaginated[T any](c *Client, path string) ([]T, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("GET", u, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read error response: %w", err)
+		}
+		return nil, errors.ParseAPIError(resp, body)
+	}
+
+	var result struct {
+		Values []T `json:"values"`
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode paginated response: %w", err)
+	}
+
+	return result.Values, nil
+}
+
+func handleResponse(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode >= 400 {
+		return nil, errors.ParseAPIError(resp, body)
+	}
+	return body, nil
+}

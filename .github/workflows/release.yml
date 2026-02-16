@@ -1,0 +1,191 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Ensure homebrew-tap repo exists
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew-tap repo check"
+            exit 0
+          fi
+          if ! gh repo view PhilipKram/homebrew-tap >/dev/null 2>&1; then
+            gh repo create PhilipKram/homebrew-tap --public \
+              --description "Homebrew formulae for PhilipKram projects"
+          fi
+
+      - name: Determine goreleaser args
+        id: goreleaser
+        env:
+          HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew formula publish"
+            echo "args=release --clean --skip=brews" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=release --clean" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: ${{ steps.goreleaser.outputs.args }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Notify Microsoft Teams
+        if: success()
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "TEAMS_WEBHOOK_URL not set, skipping Teams notification"
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME}"
+          RELEASE_URL="https://github.com/PhilipKram/Bitbucket-CLI/releases/tag/${VERSION}"
+
+          # Extract release notes and clean up for Teams card:
+          # - Strip commit hashes (40-char hex prefixes)
+          # - Remove markdown headers (## Changelog, ## What's Changed, etc.)
+          # - Remove empty lines and clean up bullet formatting
+          # - Trim to 1000 chars for Adaptive Card limits
+          RELEASE_NOTES=$(gh release view "${VERSION}" --json body --jq '.body' 2>/dev/null || echo "")
+
+          if [ -n "$RELEASE_NOTES" ]; then
+            CHANGELOG=$(echo "$RELEASE_NOTES" \
+              | sed 's/^[a-f0-9]\{7,40\} //' \
+              | sed 's/^\* [a-f0-9]\{7,40\} /* /' \
+              | grep -v '^## ' \
+              | grep -v '^Changelog$' \
+              | grep -v '^$' \
+              | sed 's/^\* /• /' \
+              | head -15 \
+              | sed 's/"/\\"/g; s/$/\\n/' \
+              | tr -d '\n')
+            if [ ${#CHANGELOG} -gt 1000 ]; then
+              CHANGELOG="${CHANGELOG:0:997}..."
+            fi
+          else
+            CHANGELOG="No changelog available. See the release page for details."
+          fi
+
+          # Count release assets
+          ASSET_COUNT=$(gh release view "${VERSION}" --json assets --jq '.assets | length' 2>/dev/null || echo "0")
+
+          # Get previous tag for comparison
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${VERSION}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list --count "${PREV_TAG}..${VERSION}" 2>/dev/null || echo "?")
+            COMPARE_INFO="${COMMIT_COUNT} commits since ${PREV_TAG}"
+          else
+            COMPARE_INFO="Initial release"
+          fi
+
+          curl -s -X POST "$TEAMS_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "type": "message",
+              "attachments": [{
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                  "type": "AdaptiveCard",
+                  "version": "1.4",
+                  "body": [
+                    {
+                      "type": "Image",
+                      "url": "https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/docs/assets/release-banner.svg",
+                      "width": "600px",
+                      "altText": "bb Bitbucket CLI — New Release"
+                    },
+                    {
+                      "type": "TextBlock",
+                      "size": "Large",
+                      "weight": "Bolder",
+                      "text": "bb '"${VERSION}"' released",
+                      "spacing": "Medium"
+                    },
+                    {
+                      "type": "ColumnSet",
+                      "columns": [
+                        {
+                          "type": "Column",
+                          "width": "auto",
+                          "items": [
+                            {
+                              "type": "TextBlock",
+                              "text": "'"${COMPARE_INFO}"'",
+                              "isSubtle": true,
+                              "size": "Small"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "Column",
+                          "width": "auto",
+                          "items": [
+                            {
+                              "type": "TextBlock",
+                              "text": "📦 '"${ASSET_COUNT}"' artifacts",
+                              "isSubtle": true,
+                              "size": "Small"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "**What'"'"'s Changed**",
+                      "weight": "Bolder",
+                      "spacing": "Medium",
+                      "separator": true
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "'"${CHANGELOG}"'",
+                      "wrap": true,
+                      "size": "Small",
+                      "spacing": "Small"
+                    }
+                  ],
+                  "actions": [
+                    {
+                      "type": "Action.OpenUrl",
+                      "title": "📋 View Release",
+                      "url": "'"${RELEASE_URL}"'"
+                    },
+                    {
+                      "type": "Action.OpenUrl",
+                      "title": "⬇️ Download",
+                      "url": "'"${RELEASE_URL}"'#assets"
+                    }
+                  ]
+                }
+              }]
+            }'
