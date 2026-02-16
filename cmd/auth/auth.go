@@ -17,10 +17,20 @@ func NewCmdAuth() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Authenticate with Bitbucket",
-		Long:  "Manage authentication with Bitbucket Cloud using OAuth 2.0.",
+		Long: `Manage authentication with Bitbucket Cloud.
+
+Two authentication methods are supported:
+
+  OAuth 2.0 (recommended):
+    bb auth setup   - configure OAuth consumer credentials
+    bb auth login   - authenticate via browser
+
+  App Password (token):
+    bb auth token   - authenticate with username + app password`,
 	}
 
 	cmd.AddCommand(newCmdLogin())
+	cmd.AddCommand(newCmdToken())
 	cmd.AddCommand(newCmdLogout())
 	cmd.AddCommand(newCmdStatus())
 	cmd.AddCommand(newCmdSetup())
@@ -99,6 +109,69 @@ func newCmdLogin() *cobra.Command {
 	}
 }
 
+func newCmdToken() *cobra.Command {
+	var username string
+	var appPassword string
+
+	cmd := &cobra.Command{
+		Use:   "token",
+		Short: "Authenticate with a Bitbucket App Password",
+		Long: `Authenticate using your Bitbucket username and an App Password.
+
+To create an App Password:
+  1. Go to Bitbucket > Personal Settings > App passwords
+  2. Click "Create app password"
+  3. Give it a label and select the permissions you need
+  4. Copy the generated password
+
+You can pass credentials via flags or enter them interactively.
+The BB_USERNAME and BB_TOKEN environment variables are also supported.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reader := bufio.NewReader(os.Stdin)
+
+			// Check environment variables first, then flags, then prompt
+			if username == "" {
+				username = os.Getenv("BB_USERNAME")
+			}
+			if appPassword == "" {
+				appPassword = os.Getenv("BB_TOKEN")
+			}
+
+			if username == "" {
+				fmt.Print("Bitbucket username: ")
+				input, _ := reader.ReadString('\n')
+				username = strings.TrimSpace(input)
+			}
+			if appPassword == "" {
+				fmt.Print("App password: ")
+				input, _ := reader.ReadString('\n')
+				appPassword = strings.TrimSpace(input)
+			}
+
+			if username == "" || appPassword == "" {
+				return fmt.Errorf("both username and app password are required")
+			}
+
+			token := &config.TokenData{
+				AccessToken: appPassword,
+				TokenType:   "basic",
+				AuthMethod:  config.AuthMethodToken,
+				Username:    username,
+			}
+
+			if err := config.SaveToken(token); err != nil {
+				return fmt.Errorf("failed to save credentials: %w", err)
+			}
+
+			output.PrintMessage("Authenticated as '%s' using app password.", username)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&username, "username", "u", "", "Bitbucket username")
+	cmd.Flags().StringVarP(&appPassword, "password", "p", "", "App password")
+	return cmd
+}
+
 func newCmdLogout() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
@@ -120,17 +193,29 @@ func newCmdStatus() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil {
-				output.PrintMessage("Not authenticated. Run 'bb auth login' to log in.")
+				output.PrintMessage("Not authenticated. Run 'bb auth login' or 'bb auth token' to log in.")
 				return nil
 			}
 
-			if token.AccessToken != "" {
-				output.PrintMessage("Authenticated with Bitbucket.")
+			if token.AccessToken == "" {
+				output.PrintMessage("Not authenticated. Run 'bb auth login' or 'bb auth token' to log in.")
+				return nil
+			}
+
+			method := token.AuthMethod
+			if method == "" {
+				method = config.AuthMethodOAuth
+			}
+
+			switch method {
+			case config.AuthMethodToken:
+				output.PrintMessage("Authenticated with Bitbucket via App Password.")
+				output.PrintMessage("Username: %s", token.Username)
+			default:
+				output.PrintMessage("Authenticated with Bitbucket via OAuth 2.0.")
 				if token.Scopes != "" {
 					output.PrintMessage("Scopes: %s", token.Scopes)
 				}
-			} else {
-				output.PrintMessage("Not authenticated. Run 'bb auth login' to log in.")
 			}
 			return nil
 		},
