@@ -1,0 +1,16 @@
+# Binary
+bb
+bb.exe
+
+# GoReleaser
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
