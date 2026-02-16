@@ -20,12 +20,14 @@ var rootCmd = &cobra.Command{
 	Short: "Bitbucket CLI - a command-line tool for Bitbucket Cloud",
 	Long: `bb is a CLI tool for interacting with Bitbucket Cloud.
 
-It supports OAuth 2.0 authentication and provides commands for managing
-repositories, pull requests, pipelines, issues, branches, snippets,
-workspaces, and more.
+It supports multiple authentication methods and provides commands for
+managing repositories, pull requests, pipelines, issues, branches,
+snippets, workspaces, and more.
 
-Get started by running:
-  bb auth login`,
+Get started:
+  bb auth login                                       # interactive login
+  bb auth login --web                                 # OAuth via browser
+  echo "token" | bb auth login --with-token -u user   # CI/scripts`,
 }
 
 func Execute() error {

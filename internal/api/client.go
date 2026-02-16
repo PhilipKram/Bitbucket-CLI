@@ -40,7 +40,7 @@ func NewClient() (*Client, error) {
 
 	token, err := config.LoadToken()
 	if err != nil {
-		return nil, fmt.Errorf("not authenticated. Run 'bb auth login' or 'bb auth token' first")
+		return nil, fmt.Errorf("not authenticated. Run 'bb auth login' first")
 	}
 
 	method := token.AuthMethod
