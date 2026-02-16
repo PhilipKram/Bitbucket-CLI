@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
 	authCmd "github.com/PhilipKram/bitbucket-cli/cmd/auth"
@@ -13,6 +15,13 @@ import (
 	snippetCmd "github.com/PhilipKram/bitbucket-cli/cmd/snippet"
 	userCmd "github.com/PhilipKram/bitbucket-cli/cmd/user"
 	workspaceCmd "github.com/PhilipKram/bitbucket-cli/cmd/workspace"
+)
+
+// Set via ldflags at build time.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 var rootCmd = &cobra.Command{
@@ -28,6 +37,7 @@ Get started:
   bb auth login                                       # interactive login
   bb auth login --web                                 # OAuth via browser
   echo "token" | bb auth login --with-token -u user   # CI/scripts`,
+	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 }
 
 func Execute() error {
