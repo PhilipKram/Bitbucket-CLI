@@ -17,17 +17,21 @@ import (
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
 )
 
+// OAuthCallbackPort is the fixed port used for the OAuth callback server.
+// The Bitbucket OAuth consumer must be configured with the callback URL:
+//
+//	http://localhost:8817/callback
+const OAuthCallbackPort = 8817
+
 // Login performs the OAuth 2.0 Authorization Code flow.
 // It starts a local HTTP server to receive the callback, opens the browser
 // for user authorization, and exchanges the code for tokens.
 func Login(clientID, clientSecret string) (*config.TokenData, error) {
-	// Find an available port for the callback server
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OAuthCallbackPort))
 	if err != nil {
-		return nil, fmt.Errorf("failed to start local server: %w", err)
+		return nil, fmt.Errorf("failed to start local server on port %d (is another instance running?): %w", OAuthCallbackPort, err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	redirectURI := fmt.Sprintf("http://localhost:%d/callback", port)
+	redirectURI := fmt.Sprintf("http://localhost:%d/callback", OAuthCallbackPort)
 
 	codeCh := make(chan string, 1)
 	errCh := make(chan error, 1)
