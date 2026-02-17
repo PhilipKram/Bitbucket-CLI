@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -440,6 +441,8 @@ func newCmdComments() *cobra.Command {
 
 func newCmdComment() *cobra.Command {
 	var body string
+	var bodyFile string
+	var useEditor bool
 	var file string
 	var line int
 
@@ -448,6 +451,16 @@ func newCmdComment() *cobra.Command {
 		Short: "Add a comment to a pull request (supports inline comments on specific files/lines)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			resolvedBody, err := cmdutil.ResolveBody(
+				body, bodyFile, useEditor,
+				cmd.Flags().Changed("body"),
+				cmd.Flags().Changed("body-file"),
+				cmd.Flags().Changed("editor"),
+			)
+			if err != nil {
+				return err
+			}
+
 			fileSet := cmd.Flags().Changed("file")
 			lineSet := cmd.Flags().Changed("line")
 			if fileSet != lineSet {
@@ -459,7 +472,7 @@ func newCmdComment() *cobra.Command {
 				return err
 			}
 			reqBody := map[string]interface{}{
-				"content": map[string]string{"raw": body},
+				"content": map[string]string{"raw": resolvedBody},
 			}
 			if fileSet {
 				reqBody["inline"] = map[string]interface{}{
@@ -481,8 +494,9 @@ func newCmdComment() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body (required)")
-	cmd.MarkFlagRequired("body")
+	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body")
+	cmd.Flags().StringVarP(&bodyFile, "body-file", "F", "", "Read body from file (use - for stdin)")
+	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose comment")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "File path in the diff for inline comment")
 	cmd.Flags().IntVarP(&line, "line", "l", 0, "Line number in the file for inline comment")
 	return cmd

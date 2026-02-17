@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -356,18 +357,30 @@ func newCmdComments() *cobra.Command {
 
 func newCmdComment() *cobra.Command {
 	var body string
+	var bodyFile string
+	var useEditor bool
 
 	cmd := &cobra.Command{
 		Use:   "comment <workspace/repo-slug> <issue-id>",
 		Short: "Add a comment to an issue",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			resolvedBody, err := cmdutil.ResolveBody(
+				body, bodyFile, useEditor,
+				cmd.Flags().Changed("body"),
+				cmd.Flags().Changed("body-file"),
+				cmd.Flags().Changed("editor"),
+			)
+			if err != nil {
+				return err
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
 			}
 			reqBody := map[string]interface{}{
-				"content": map[string]string{"raw": body},
+				"content": map[string]string{"raw": resolvedBody},
 			}
 			jsonBody, _ := json.Marshal(reqBody)
 			path := fmt.Sprintf("/repositories/%s/issues/%s/comments", args[0], args[1])
@@ -379,8 +392,9 @@ func newCmdComment() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body (required)")
-	cmd.MarkFlagRequired("body")
+	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body")
+	cmd.Flags().StringVarP(&bodyFile, "body-file", "F", "", "Read body from file (use - for stdin)")
+	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose comment")
 	return cmd
 }
 
