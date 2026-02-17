@@ -252,7 +252,7 @@
   </div>
   <div class="install-box">
     <span class="dollar">$</span>
-    <code id="install-cmd">brew install PhilipKram/tap/bb</code>
+    <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh</code>
     <button class="copy-btn" onclick="copyInstall()">Copy</button>
   </div>
 </section>
@@ -361,11 +361,17 @@
   <div class="install-cards">
     <div class="install-card">
       <h3>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+        Quick Install
+      </h3>
+      <pre>curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh</pre>
+    </div>
+    <div class="install-card">
+      <h3>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 8l4 4-4 4M7 16l-4-4 4-4"/></svg>
         Homebrew
       </h3>
-      <pre>brew tap PhilipKram/tap
-brew install bb</pre>
+      <pre>brew install PhilipKram/tap/bb</pre>
     </div>
     <div class="install-card">
       <h3>

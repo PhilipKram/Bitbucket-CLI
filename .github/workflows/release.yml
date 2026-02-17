@@ -23,6 +23,15 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Ensure homebrew-tap repo exists
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if ! gh repo view PhilipKram/homebrew-tap >/dev/null 2>&1; then
+            gh repo create PhilipKram/homebrew-tap --public \
+              --description "Homebrew formulae for PhilipKram projects"
+          fi
+
       - uses: goreleaser/goreleaser-action@v6
         with:
           args: release --clean

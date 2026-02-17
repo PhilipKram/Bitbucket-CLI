@@ -4,11 +4,20 @@ A command-line tool for interacting with Bitbucket Cloud. Manage repositories, p
 
 ## Installation
 
-### Homebrew (macOS / Linux)
+### Quick install (macOS / Linux)
 
 ```sh
-brew tap PhilipKram/tap
-brew install bb
+curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh
+```
+
+### Homebrew (macOS / Linux)
+
+> **Note:** Homebrew installation requires a published release. If you get a
+> "repository not found" error, use the quick install or build from source
+> instead.
+
+```sh
+brew install PhilipKram/tap/bb
 ```
 
 ### From source
