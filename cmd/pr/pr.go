@@ -440,12 +440,20 @@ func newCmdComments() *cobra.Command {
 
 func newCmdComment() *cobra.Command {
 	var body string
+	var file string
+	var line int
 
 	cmd := &cobra.Command{
 		Use:   "comment <workspace/repo-slug> <pr-id>",
-		Short: "Add a comment to a pull request",
+		Short: "Add a comment to a pull request (supports inline comments on specific files/lines)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fileSet := cmd.Flags().Changed("file")
+			lineSet := cmd.Flags().Changed("line")
+			if fileSet != lineSet {
+				return fmt.Errorf("--file and --line must be used together")
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
@@ -453,18 +461,30 @@ func newCmdComment() *cobra.Command {
 			reqBody := map[string]interface{}{
 				"content": map[string]string{"raw": body},
 			}
+			if fileSet {
+				reqBody["inline"] = map[string]interface{}{
+					"path": file,
+					"to":   line,
+				}
+			}
 			jsonBody, _ := json.Marshal(reqBody)
 			path := fmt.Sprintf("/repositories/%s/pullrequests/%s/comments", args[0], args[1])
 			_, err = client.Post(path, string(jsonBody))
 			if err != nil {
 				return err
 			}
-			output.PrintMessage("Comment added to PR #%s.", args[1])
+			if fileSet {
+				output.PrintMessage("Inline comment added to PR #%s on %s:%d.", args[1], file, line)
+			} else {
+				output.PrintMessage("Comment added to PR #%s.", args[1])
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body (required)")
 	cmd.MarkFlagRequired("body")
+	cmd.Flags().StringVarP(&file, "file", "f", "", "File path in the diff for inline comment")
+	cmd.Flags().IntVarP(&line, "line", "l", 0, "Line number in the file for inline comment")
 	return cmd
 }
 

@@ -93,10 +93,14 @@ bb pr view myworkspace/myrepo 42
 bb pr create myworkspace/myrepo --title "Feature" --source feature-branch
 bb pr merge myworkspace/myrepo 42 --strategy squash
 bb pr approve myworkspace/myrepo 42
+bb pr comment myworkspace/myrepo 42 --body "Looks good!"
+bb pr comment myworkspace/myrepo 42 --body "Fix this" --file src/main.go --line 42
 bb pr comments myworkspace/myrepo 42
 bb pr diff myworkspace/myrepo 42
 bb pr activity myworkspace/myrepo 42
 ```
+
+The `bb pr comment` command supports inline comments on specific files and lines in a PR diff using `--file/-f` and `--line/-l` flags. Both flags must be provided together.
 
 ### Repositories
 
