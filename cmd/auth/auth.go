@@ -38,6 +38,7 @@ Available commands:
 
 func newCmdLogin() *cobra.Command {
 	var web bool
+	var withToken bool
 	var clientID string
 	var clientSecret string
 	cmd := &cobra.Command{
@@ -50,12 +51,20 @@ consumer key and secret (or saved credentials will be used).
 
 For non-interactive use, pass flags:
 
+  # Provide an OAuth access token from stdin (CI/scripts)
+  echo "$OAUTH_TOKEN" | bb auth login --with-token
+
   # Force OAuth browser flow
   bb auth login --web --client-id KEY --client-secret SECRET
 
   # OAuth with saved credentials (re-authenticate)
   bb auth login --web`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Non-interactive: --with-token reads access token from stdin
+			if withToken {
+				return loginWithToken()
+			}
+
 			// Non-interactive: --web skips prompts
 			if web {
 				return loginWeb(clientID, clientSecret)
@@ -67,6 +76,7 @@ For non-interactive use, pass flags:
 	}
 
 	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via browser (OAuth 2.0), skipping prompts")
+	cmd.Flags().BoolVar(&withToken, "with-token", false, "Read an OAuth access token from stdin")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth consumer key")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "OAuth consumer secret")
 	return cmd
@@ -88,6 +98,30 @@ func loginInteractive(clientID, clientSecret string) error {
 	}
 
 	return loginOAuthInteractive(reader, clientID, clientSecret)
+}
+
+// loginWithToken reads an OAuth access token from stdin and saves it.
+func loginWithToken() error {
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return fmt.Errorf("failed to read token from stdin")
+	}
+	accessToken := strings.TrimSpace(scanner.Text())
+	if accessToken == "" {
+		return fmt.Errorf("empty token provided on stdin")
+	}
+
+	token := &config.TokenData{
+		AccessToken: accessToken,
+		TokenType:   "bearer",
+	}
+
+	if err := config.SaveToken(token); err != nil {
+		return fmt.Errorf("failed to save credentials: %w", err)
+	}
+
+	output.PrintMessage("Logged in to Bitbucket.")
+	return nil
 }
 
 // loginOAuthInteractive guides the user through OAuth, prompting for client ID/secret if needed.

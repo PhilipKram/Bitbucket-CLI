@@ -47,6 +47,9 @@ You'll be prompted for your OAuth consumer key and secret (or saved credentials 
 ### Non-interactive / CI
 
 ```sh
+# Provide an OAuth access token from stdin
+echo "$OAUTH_TOKEN" | bb auth login --with-token
+
 # OAuth browser flow with explicit credentials
 bb auth login --web --client-id KEY --client-secret SECRET
 

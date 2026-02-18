@@ -35,7 +35,8 @@ workspaces, and more.
 
 Get started:
   bb auth login                                       # interactive login
-  bb auth login --web                                 # OAuth via browser`,
+  bb auth login --web                                 # OAuth via browser
+  echo "$TOKEN" | bb auth login --with-token          # CI/scripts`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 }
 
