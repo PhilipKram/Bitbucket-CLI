@@ -37,18 +37,9 @@ func newCmdView() *cobra.Command {
 			output.PrintMessage("OAuth Key:         %s", maskValue(cfg.OAuthKey))
 
 			// Show current auth method
-			token, tokenErr := config.LoadToken()
-			if tokenErr == nil && token.AccessToken != "" {
-				method := token.AuthMethod
-				if method == "" {
-					method = config.AuthMethodOAuth
-				}
-				switch method {
-				case config.AuthMethodToken:
-					output.PrintMessage("Auth Method:       App Password (user: %s)", token.Username)
-				default:
-					output.PrintMessage("Auth Method:       OAuth 2.0")
-				}
+			_, tokenErr := config.LoadToken()
+			if tokenErr == nil {
+				output.PrintMessage("Auth Method:       OAuth 2.0")
 			} else {
 				output.PrintMessage("Auth Method:       (not authenticated)")
 			}

@@ -84,7 +84,6 @@ func TestSaveAndLoadToken(t *testing.T) {
 		RefreshToken: "refresh456",
 		TokenType:    "bearer",
 		ExpiresIn:    7200,
-		AuthMethod:   AuthMethodOAuth,
 	}
 
 	if err := SaveToken(token); err != nil {
@@ -102,37 +101,6 @@ func TestSaveAndLoadToken(t *testing.T) {
 	if loaded.RefreshToken != token.RefreshToken {
 		t.Errorf("RefreshToken = %q, want %q", loaded.RefreshToken, token.RefreshToken)
 	}
-	if loaded.AuthMethod != token.AuthMethod {
-		t.Errorf("AuthMethod = %q, want %q", loaded.AuthMethod, token.AuthMethod)
-	}
-}
-
-func TestSaveAndLoadToken_AppPassword(t *testing.T) {
-	tmpDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", tmpDir)
-
-	token := &TokenData{
-		AccessToken: "app-pass-123",
-		TokenType:   "basic",
-		AuthMethod:  AuthMethodToken,
-		Username:    "testuser",
-	}
-
-	if err := SaveToken(token); err != nil {
-		t.Fatalf("SaveToken() error: %v", err)
-	}
-
-	loaded, err := LoadToken()
-	if err != nil {
-		t.Fatalf("LoadToken() error: %v", err)
-	}
-
-	if loaded.Username != "testuser" {
-		t.Errorf("Username = %q, want %q", loaded.Username, "testuser")
-	}
-	if loaded.AuthMethod != AuthMethodToken {
-		t.Errorf("AuthMethod = %q, want %q", loaded.AuthMethod, AuthMethodToken)
-	}
 }
 
 func TestClearToken(t *testing.T) {
@@ -141,7 +109,6 @@ func TestClearToken(t *testing.T) {
 
 	token := &TokenData{
 		AccessToken: "access123",
-		AuthMethod:  AuthMethodOAuth,
 	}
 	if err := SaveToken(token); err != nil {
 		t.Fatalf("SaveToken() error: %v", err)

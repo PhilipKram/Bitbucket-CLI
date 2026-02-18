@@ -38,28 +38,17 @@ Available commands:
 
 func newCmdLogin() *cobra.Command {
 	var web bool
-	var withToken bool
-	var username string
 	var clientID string
 	var clientSecret string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Bitbucket",
-		Long: `Authenticate with Bitbucket Cloud.
+		Long: `Authenticate with Bitbucket Cloud using OAuth 2.0.
 
-When run interactively (no flags), you will be prompted to choose an
-authentication method:
-
-  1. App Password  - authenticate with username + app password (simple)
-  2. OAuth 2.0     - authenticate via browser with an OAuth consumer
+When run interactively (no flags), you will be prompted for your OAuth
+consumer key and secret (or saved credentials will be used).
 
 For non-interactive use, pass flags:
-
-  # App password from stdin (like gh auth login --with-token)
-  echo "my-app-password" | bb auth login --with-token --username myuser
-
-  # App password via environment variables
-  BB_USERNAME=myuser BB_TOKEN=password bb auth login --with-token
 
   # Force OAuth browser flow
   bb auth login --web --client-id KEY --client-secret SECRET
@@ -67,44 +56,29 @@ For non-interactive use, pass flags:
   # OAuth with saved credentials (re-authenticate)
   bb auth login --web`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Non-interactive: --with-token reads app password from stdin
-			if withToken {
-				return loginWithToken(username)
-			}
-
-			// Non-interactive: --web forces OAuth flow
+			// Non-interactive: --web skips prompts
 			if web {
 				return loginWeb(clientID, clientSecret)
 			}
 
-			// Interactive: prompt user to choose
+			// Interactive: go straight to OAuth flow
 			return loginInteractive(clientID, clientSecret)
 		},
 	}
 
-	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via browser (OAuth 2.0)")
-	cmd.Flags().BoolVar(&withToken, "with-token", false, "Read app password from stdin")
-	cmd.Flags().StringVarP(&username, "username", "u", "", "Bitbucket username (for --with-token)")
+	cmd.Flags().BoolVarP(&web, "web", "w", false, "Authenticate via browser (OAuth 2.0), skipping prompts")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "OAuth consumer key")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "OAuth consumer secret")
 	return cmd
 }
 
-// loginInteractive prompts the user to choose an auth method, then collects credentials.
+// loginInteractive prompts the user for OAuth credentials and authenticates.
 func loginInteractive(clientID, clientSecret string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Check if already authenticated
 	if token, err := config.LoadToken(); err == nil && token.AccessToken != "" {
-		method := token.AuthMethod
-		if method == "" {
-			method = config.AuthMethodOAuth
-		}
-		who := "Bitbucket"
-		if method == config.AuthMethodToken && token.Username != "" {
-			who = token.Username
-		}
-		fmt.Printf("You're already logged in as %s. Re-authenticate? [y/N]: ", who)
+		fmt.Print("You're already logged in to Bitbucket. Re-authenticate? [y/N]: ")
 		answer, _ := reader.ReadString('\n')
 		answer = strings.TrimSpace(strings.ToLower(answer))
 		if answer != "y" && answer != "yes" {
@@ -113,69 +87,7 @@ func loginInteractive(clientID, clientSecret string) error {
 		}
 	}
 
-	fmt.Println("? How would you like to authenticate?")
-	fmt.Println("  [1] App Password (username + app password)")
-	fmt.Println("  [2] OAuth 2.0 (browser-based)")
-	fmt.Print("Choice [1]: ")
-	choice, _ := reader.ReadString('\n')
-	choice = strings.TrimSpace(choice)
-	if choice == "" {
-		choice = "1"
-	}
-
-	switch choice {
-	case "1":
-		return loginAppPasswordInteractive(reader)
-	case "2":
-		return loginOAuthInteractive(reader, clientID, clientSecret)
-	default:
-		return fmt.Errorf("invalid choice: %s", choice)
-	}
-}
-
-// loginAppPasswordInteractive guides the user through app password auth.
-func loginAppPasswordInteractive(reader *bufio.Reader) error {
-	fmt.Println()
-	fmt.Println("Tip: Create an App Password at")
-	fmt.Println("  Bitbucket > Personal Settings > App passwords")
-	fmt.Println()
-
-	username := os.Getenv("BB_USERNAME")
-	if username == "" {
-		fmt.Print("? Bitbucket username: ")
-		input, _ := reader.ReadString('\n')
-		username = strings.TrimSpace(input)
-	} else {
-		fmt.Printf("? Bitbucket username (from BB_USERNAME): %s\n", username)
-	}
-
-	appPassword := os.Getenv("BB_TOKEN")
-	if appPassword == "" {
-		fmt.Print("? App password: ")
-		input, _ := reader.ReadString('\n')
-		appPassword = strings.TrimSpace(input)
-	} else {
-		fmt.Println("? App password: (from BB_TOKEN)")
-	}
-
-	if username == "" || appPassword == "" {
-		return fmt.Errorf("both username and app password are required")
-	}
-
-	token := &config.TokenData{
-		AccessToken: appPassword,
-		TokenType:   "basic",
-		AuthMethod:  config.AuthMethodToken,
-		Username:    username,
-	}
-
-	if err := config.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save credentials: %w", err)
-	}
-
-	fmt.Println()
-	output.PrintMessage("Logged in as %s.", username)
-	return nil
+	return loginOAuthInteractive(reader, clientID, clientSecret)
 }
 
 // loginOAuthInteractive guides the user through OAuth, prompting for client ID/secret if needed.
@@ -227,7 +139,6 @@ func loginOAuthInteractive(reader *bufio.Reader, clientID, clientSecret string) 
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
-	token.AuthMethod = config.AuthMethodOAuth
 
 	if err := config.SaveToken(token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
@@ -235,40 +146,6 @@ func loginOAuthInteractive(reader *bufio.Reader, clientID, clientSecret string) 
 
 	fmt.Println()
 	output.PrintMessage("Logged in to Bitbucket.")
-	return nil
-}
-
-// loginWithToken handles non-interactive --with-token (reads from stdin).
-func loginWithToken(username string) error {
-	if username == "" {
-		username = os.Getenv("BB_USERNAME")
-	}
-	if username == "" {
-		return fmt.Errorf("--username is required when using --with-token")
-	}
-
-	// Read app password from stdin
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return fmt.Errorf("failed to read token from stdin")
-	}
-	appPassword := strings.TrimSpace(scanner.Text())
-	if appPassword == "" {
-		return fmt.Errorf("empty token provided on stdin")
-	}
-
-	token := &config.TokenData{
-		AccessToken: appPassword,
-		TokenType:   "basic",
-		AuthMethod:  config.AuthMethodToken,
-		Username:    username,
-	}
-
-	if err := config.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save credentials: %w", err)
-	}
-
-	output.PrintMessage("Logged in as %s.", username)
 	return nil
 }
 
@@ -301,7 +178,6 @@ func loginWeb(clientID, clientSecret string) error {
 	if err != nil {
 		return fmt.Errorf("login failed: %w", err)
 	}
-	token.AuthMethod = config.AuthMethodOAuth
 
 	if err := config.SaveToken(token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
@@ -316,21 +192,16 @@ func newCmdLogout() *cobra.Command {
 		Use:   "logout",
 		Short: "Log out and remove stored credentials",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			token, err := config.LoadToken()
+			_, err := config.LoadToken()
 			if err != nil {
 				output.PrintMessage("Already logged out.")
 				return nil
 			}
 
-			who := ""
-			if token.AuthMethod == config.AuthMethodToken && token.Username != "" {
-				who = fmt.Sprintf(" (user: %s)", token.Username)
-			}
-
 			if err := config.ClearToken(); err != nil {
 				return err
 			}
-			output.PrintMessage("Logged out of Bitbucket%s.", who)
+			output.PrintMessage("Logged out of Bitbucket.")
 			return nil
 		},
 	}
@@ -349,17 +220,9 @@ func newCmdStatus() *cobra.Command {
 				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
 			}
 
-			method := token.AuthMethod
-			if method == "" {
-				method = config.AuthMethodOAuth
-			}
-
 			if jsonOut {
 				data := map[string]string{
-					"auth_method": method,
-				}
-				if method == config.AuthMethodToken {
-					data["username"] = token.Username
+					"auth_method": "oauth",
 				}
 				if showToken {
 					data["token"] = token.AccessToken
@@ -374,16 +237,10 @@ func newCmdStatus() *cobra.Command {
 			}
 
 			fmt.Println("bitbucket.org")
-			switch method {
-			case config.AuthMethodToken:
-				fmt.Printf("  Logged in to bitbucket.org account %s\n", token.Username)
-				fmt.Println("    - Auth method: App Password")
-			default:
-				fmt.Println("  Logged in to bitbucket.org via OAuth 2.0")
-				fmt.Println("    - Auth method: OAuth 2.0")
-				if token.Scopes != "" {
-					fmt.Printf("    - Token scopes: %s\n", token.Scopes)
-				}
+			fmt.Println("  Logged in to bitbucket.org via OAuth 2.0")
+			fmt.Println("    - Auth method: OAuth 2.0")
+			if token.Scopes != "" {
+				fmt.Printf("    - Token scopes: %s\n", token.Scopes)
 			}
 
 			if showToken {
@@ -426,20 +283,13 @@ func newCmdRefresh() *cobra.Command {
 	return &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh the OAuth access token",
-		Long:  "Use the stored refresh token to obtain a new access token. Only works with OAuth authentication.",
+		Long:  "Use the stored refresh token to obtain a new access token.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil || token.AccessToken == "" {
 				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
 			}
 
-			method := token.AuthMethod
-			if method == "" {
-				method = config.AuthMethodOAuth
-			}
-			if method != config.AuthMethodOAuth {
-				return fmt.Errorf("token refresh is only available for OAuth authentication")
-			}
 			if token.RefreshToken == "" {
 				return fmt.Errorf("no refresh token stored")
 			}
@@ -449,14 +299,13 @@ func newCmdRefresh() *cobra.Command {
 				return err
 			}
 			if cfg.OAuthKey == "" || cfg.OAuthSecret == "" {
-				return fmt.Errorf("OAuth credentials not found. Run 'bb auth login --web' to re-authenticate")
+				return fmt.Errorf("OAuth credentials not found. Run 'bb auth login' to re-authenticate")
 			}
 
 			newToken, err := authPkg.RefreshAccessToken(cfg.OAuthKey, cfg.OAuthSecret, token.RefreshToken)
 			if err != nil {
 				return fmt.Errorf("refresh failed: %w", err)
 			}
-			newToken.AuthMethod = config.AuthMethodOAuth
 
 			if err := config.SaveToken(newToken); err != nil {
 				return fmt.Errorf("failed to save refreshed token: %w", err)
@@ -473,11 +322,4 @@ func maskToken(token string) string {
 		return "****"
 	}
 	return token[:4] + strings.Repeat("*", min(len(token)-4, 32))
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

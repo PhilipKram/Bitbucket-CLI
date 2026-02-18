@@ -24,21 +24,12 @@ type Config struct {
 	OAuthSecret string `json:"oauth_secret"`
 }
 
-// AuthMethod identifies how the user authenticated.
-const (
-	AuthMethodOAuth    = "oauth"
-	AuthMethodToken    = "token" // Bitbucket App Password
-)
-
 type TokenData struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
 	Scopes       string `json:"scopes"`
-	// Fields for app-password (token) auth
-	AuthMethod string `json:"auth_method,omitempty"` // "oauth" or "token"
-	Username   string `json:"username,omitempty"`     // Bitbucket username for Basic auth
 }
 
 func ConfigDir() (string, error) {

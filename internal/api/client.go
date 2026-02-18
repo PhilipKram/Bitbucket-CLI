@@ -24,7 +24,6 @@ type Client struct {
 	httpClient *http.Client
 	token      *config.TokenData
 	cfg        *config.Config
-	authMethod string // "oauth" or "token"
 }
 
 // PaginatedResponse is the standard paginated response envelope from Bitbucket.
@@ -37,8 +36,7 @@ type PaginatedResponse struct {
 	Values   json.RawMessage `json:"values"`
 }
 
-// NewClient creates an authenticated API client.
-// It supports both OAuth (Bearer) and App Password (Basic) authentication.
+// NewClient creates an authenticated API client using OAuth Bearer tokens.
 func NewClient() (*Client, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -48,11 +46,6 @@ func NewClient() (*Client, error) {
 	token, err := config.LoadToken()
 	if err != nil {
 		return nil, fmt.Errorf("not authenticated. Run 'bb auth login' first")
-	}
-
-	method := token.AuthMethod
-	if method == "" {
-		method = config.AuthMethodOAuth // default for legacy tokens
 	}
 
 	timeout := defaultTimeout
@@ -66,22 +59,16 @@ func NewClient() (*Client, error) {
 		httpClient: &http.Client{Timeout: timeout},
 		token:      token,
 		cfg:        cfg,
-		authMethod: method,
 	}, nil
 }
 
 // NewClientWith creates a Client from externally provided config, token, and HTTP client.
 // This is intended for testing and advanced usage where you don't want to read from disk.
 func NewClientWith(httpClient *http.Client, cfg *config.Config, token *config.TokenData) *Client {
-	method := token.AuthMethod
-	if method == "" {
-		method = config.AuthMethodOAuth
-	}
 	return &Client{
 		httpClient: httpClient,
 		token:      token,
 		cfg:        cfg,
-		authMethod: method,
 	}
 }
 
@@ -91,12 +78,7 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 func (c *Client) setAuth(req *http.Request) {
-	switch c.authMethod {
-	case config.AuthMethodToken:
-		req.SetBasicAuth(c.token.Username, c.token.AccessToken)
-	default: // oauth
-		req.Header.Set("Authorization", "Bearer "+c.token.AccessToken)
-	}
+	req.Header.Set("Authorization", "Bearer "+c.token.AccessToken)
 }
 
 func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
@@ -124,8 +106,8 @@ func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType st
 		return nil, err
 	}
 
-	// Attempt token refresh on 401 (only for OAuth flow)
-	if resp.StatusCode == http.StatusUnauthorized && c.authMethod == config.AuthMethodOAuth && c.token.RefreshToken != "" {
+	// Attempt token refresh on 401
+	if resp.StatusCode == http.StatusUnauthorized && c.token.RefreshToken != "" {
 		resp.Body.Close()
 		if err := c.refreshToken(); err != nil {
 			return nil, fmt.Errorf("session expired, please run 'bb auth login' again: %w", err)

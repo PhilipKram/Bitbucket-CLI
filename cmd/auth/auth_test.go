@@ -82,7 +82,7 @@ func TestNewCmdLogin_HasExpectedFlags(t *testing.T) {
 		t.Fatalf("failed to find login command: %v", err)
 	}
 
-	expectedFlags := []string{"web", "with-token", "username", "client-id", "client-secret"}
+	expectedFlags := []string{"web", "client-id", "client-secret"}
 	for _, name := range expectedFlags {
 		if loginCmd.Flags().Lookup(name) == nil {
 			t.Errorf("expected flag --%s not found on login command", name)

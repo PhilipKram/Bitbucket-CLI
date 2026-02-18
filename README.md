@@ -34,7 +34,7 @@ Download pre-built binaries for macOS, Linux, and Windows from the [Releases](ht
 
 ## Authentication
 
-`bb` supports two authentication methods:
+`bb` uses OAuth 2.0 for authentication.
 
 ### Interactive login
 
@@ -42,22 +42,16 @@ Download pre-built binaries for macOS, Linux, and Windows from the [Releases](ht
 bb auth login
 ```
 
-You'll be prompted to choose between:
-
-1. **App Password** - username + app password (simplest)
-2. **OAuth 2.0** - browser-based authorization
+You'll be prompted for your OAuth consumer key and secret (or saved credentials will be used), then a browser window will open for authorization.
 
 ### Non-interactive / CI
 
 ```sh
-# App password from stdin
-echo "$APP_PASSWORD" | bb auth login --with-token --username myuser
-
-# App password via environment variables
-BB_USERNAME=myuser BB_TOKEN=password bb auth login --with-token
-
-# OAuth browser flow
+# OAuth browser flow with explicit credentials
 bb auth login --web --client-id KEY --client-secret SECRET
+
+# OAuth with saved credentials (re-authenticate)
+bb auth login --web
 ```
 
 ### Other auth commands
@@ -168,8 +162,6 @@ The default output format is a human-readable table.
 
 | Variable           | Description                                      |
 |--------------------|--------------------------------------------------|
-| `BB_USERNAME`      | Bitbucket username (for app password auth)       |
-| `BB_TOKEN`         | Bitbucket app password                           |
 | `BB_HTTP_TIMEOUT`  | HTTP client timeout in seconds (default: 30)     |
 
 ## Development

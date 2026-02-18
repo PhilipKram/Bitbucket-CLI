@@ -27,7 +27,6 @@ func TestClient_Get(t *testing.T) {
 
 	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
 		AccessToken: "test-token",
-		AuthMethod:  config.AuthMethodOAuth,
 	})
 
 	// Override BitbucketAPI base URL by using GetRaw with the test server URL
@@ -86,7 +85,6 @@ func TestClient_Post_BodyBuffering(t *testing.T) {
 
 	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
 		AccessToken: "test-token",
-		AuthMethod:  config.AuthMethodToken, // Use token auth to skip OAuth refresh path
 	})
 
 	// This should work fine — body is buffered
@@ -95,38 +93,6 @@ func TestClient_Post_BodyBuffering(t *testing.T) {
 		t.Fatalf("Post() error: %v", err)
 	}
 	resp.Body.Close()
-}
-
-func TestClient_BasicAuth(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, pass, ok := r.BasicAuth()
-		if !ok {
-			t.Error("expected basic auth")
-		}
-		if user != "testuser" {
-			t.Errorf("expected user=testuser, got %s", user)
-		}
-		if pass != "app-password" {
-			t.Errorf("expected pass=app-password, got %s", pass)
-		}
-		w.WriteHeader(200)
-		w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
-		AccessToken: "app-password",
-		AuthMethod:  config.AuthMethodToken,
-		Username:    "testuser",
-	})
-
-	data, err := client.GetRaw(server.URL + "/test")
-	if err != nil {
-		t.Fatalf("Get() error: %v", err)
-	}
-	if string(data) != "{}" {
-		t.Errorf("unexpected response: %s", string(data))
-	}
 }
 
 func TestClient_HandleResponse_Error(t *testing.T) {
@@ -138,7 +104,6 @@ func TestClient_HandleResponse_Error(t *testing.T) {
 
 	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
 		AccessToken: "test-token",
-		AuthMethod:  config.AuthMethodOAuth,
 	})
 
 	_, err := client.GetRaw(server.URL + "/missing")
@@ -161,7 +126,6 @@ func TestClient_Delete_NoContent(t *testing.T) {
 
 	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
 		AccessToken: "test-token",
-		AuthMethod:  config.AuthMethodOAuth,
 	})
 
 	// Use doRequest directly since Delete prepends BitbucketAPI
@@ -172,17 +136,6 @@ func TestClient_Delete_NoContent(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != 204 {
 		t.Errorf("expected 204, got %d", resp.StatusCode)
-	}
-}
-
-func TestNewClientWith_DefaultsToOAuth(t *testing.T) {
-	client := NewClientWith(&http.Client{}, &config.Config{}, &config.TokenData{
-		AccessToken: "test",
-		// AuthMethod not set
-	})
-
-	if client.authMethod != config.AuthMethodOAuth {
-		t.Errorf("expected default authMethod=%q, got %q", config.AuthMethodOAuth, client.authMethod)
 	}
 }
 
@@ -199,7 +152,6 @@ func TestClient_OAuthAuth_Header(t *testing.T) {
 
 	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
 		AccessToken: "my-oauth-token",
-		AuthMethod:  config.AuthMethodOAuth,
 	})
 
 	_, err := client.GetRaw(server.URL + "/test")
