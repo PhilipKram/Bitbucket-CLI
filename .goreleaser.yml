@@ -45,6 +45,7 @@ changelog:
 
 brews:
   - name: bb
+    directory: Formula
     repository:
       owner: PhilipKram
       name: homebrew-tap
