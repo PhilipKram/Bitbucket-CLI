@@ -46,6 +46,13 @@ func newCmdLogin() *cobra.Command {
 		Short: "Log in to Bitbucket",
 		Long: `Authenticate with Bitbucket Cloud using OAuth 2.0.
 
+Before logging in, create an OAuth consumer in Bitbucket:
+
+  1. Go to Bitbucket > Workspace settings > OAuth consumers > Add consumer
+  2. Set Callback URL to: http://localhost
+  3. Select the permissions (scopes) you need
+  4. Save and copy the Key (client ID) and Secret (client secret)
+
 When run interactively (no flags), you will be prompted for your OAuth
 consumer key and secret (or saved credentials will be used).
 
