@@ -36,18 +36,21 @@ jobs:
               --description "Homebrew formulae for PhilipKram projects"
           fi
 
-      - name: Skip homebrew if token not available
+      - name: Determine goreleaser args
+        id: goreleaser
         env:
           HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           if [ -z "$HOMEBREW_TOKEN" ]; then
-            echo "HOMEBREW_TAP_TOKEN not set, removing homebrew formula config"
-            sed -i '/^brews:/,$d' .goreleaser.yml
+            echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew formula publish"
+            echo "args=release --clean --skip=brews" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=release --clean" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: goreleaser/goreleaser-action@v6
         with:
-          args: release --clean
+          args: ${{ steps.goreleaser.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
