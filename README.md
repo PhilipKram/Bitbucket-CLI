@@ -34,7 +34,17 @@ Download pre-built binaries for macOS, Linux, and Windows from the [Releases](ht
 
 ## Authentication
 
-`bb` uses OAuth 2.0 for authentication.
+`bb` uses OAuth 2.0 for authentication. You'll need an OAuth consumer from Bitbucket.
+
+### Setting up an OAuth consumer
+
+1. Go to **Bitbucket** > **Workspace settings** > **OAuth consumers** > **Add consumer**
+2. Fill in:
+   - **Name**: `bb` (or any name you like)
+   - **Callback URL**: `http://localhost`
+   - **Permissions**: select the scopes you need (e.g. Repositories, Pull requests, Pipelines, Issues)
+3. Click **Save**
+4. Copy the **Key** (client ID) and **Secret** (client secret)
 
 ### Interactive login
 
@@ -160,6 +170,17 @@ bb auth status --json
 ```
 
 The default output format is a human-readable table.
+
+## Update notifications
+
+`bb` automatically checks for new releases in the background (once every 24 hours). When a newer version is available, a notice is printed after the command output:
+
+```
+Update available: v0.0.7 → v0.0.8
+Run `brew upgrade bb` to update
+```
+
+The check adds no latency to commands and is skipped when output is piped.
 
 ## Environment variables
 

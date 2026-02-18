@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -9,6 +10,7 @@ import (
 	branchCmd "github.com/PhilipKram/bitbucket-cli/cmd/branch"
 	configCmd "github.com/PhilipKram/bitbucket-cli/cmd/config"
 	issueCmd "github.com/PhilipKram/bitbucket-cli/cmd/issue"
+	"github.com/PhilipKram/bitbucket-cli/internal/update"
 	pipelineCmd "github.com/PhilipKram/bitbucket-cli/cmd/pipeline"
 	prCmd "github.com/PhilipKram/bitbucket-cli/cmd/pr"
 	repoCmd "github.com/PhilipKram/bitbucket-cli/cmd/repo"
@@ -24,6 +26,8 @@ var (
 	date    = "unknown"
 )
 
+var updateCh = make(chan *update.UpdateInfo, 1)
+
 var rootCmd = &cobra.Command{
 	Use:   "bb",
 	Short: "Bitbucket CLI - a command-line tool for Bitbucket Cloud",
@@ -38,6 +42,21 @@ Get started:
   bb auth login --web                                 # OAuth via browser
   echo "$TOKEN" | bb auth login --with-token          # CI/scripts`,
 	Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		go func() {
+			updateCh <- update.CheckForUpdate(version)
+		}()
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		info := <-updateCh
+		if info == nil {
+			return
+		}
+		// Only print when stdout is a terminal.
+		if fi, err := os.Stdout.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
+			fmt.Fprintf(os.Stderr, "\nUpdate available: v%s → v%s\nRun `brew upgrade bb` to update\n", info.Current, info.Latest)
+		}
+	},
 }
 
 func Execute() error {
