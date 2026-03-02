@@ -67,6 +67,7 @@ func NewCmdPipeline() *cobra.Command {
 	cmd.AddCommand(newCmdStop())
 	cmd.AddCommand(newCmdSteps())
 	cmd.AddCommand(newCmdLog())
+	cmd.AddCommand(newCmdWatch())
 
 	return cmd
 }
@@ -335,4 +336,24 @@ func newCmdLog() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newCmdWatch() *cobra.Command {
+	var buildNumber int
+	var interval int
+	var jsonOut bool
+
+	cmd := &cobra.Command{
+		Use:   "watch <workspace/repo-slug>",
+		Short: "Watch pipeline status in real-time",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// TODO: Implement watch functionality
+			return fmt.Errorf("watch command not yet implemented")
+		},
+	}
+	cmd.Flags().IntVarP(&buildNumber, "build", "b", 0, "Build number to watch (0 = latest)")
+	cmd.Flags().IntVarP(&interval, "interval", "i", 5, "Polling interval in seconds")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	return cmd
 }
