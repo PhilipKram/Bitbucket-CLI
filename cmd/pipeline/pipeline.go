@@ -460,25 +460,69 @@ func newCmdWatch() *cobra.Command {
 						"steps":    steps,
 					})
 				} else {
-					// Display pipeline status
+					// Clear screen for clean display
+					output.ClearScreen()
+
+					// Display pipeline status with colors
 					result := "–"
+					resultColor := "gray"
 					if p.State.Result != nil {
 						result = p.State.Result.Name
+						switch result {
+						case "SUCCESSFUL":
+							resultColor = "green"
+						case "FAILED", "ERROR":
+							resultColor = "red"
+						case "STOPPED":
+							resultColor = "yellow"
+						}
 					}
+
+					stateColor := "gray"
+					switch p.State.Name {
+					case "COMPLETED":
+						stateColor = resultColor // Use result color for completed
+					case "IN_PROGRESS", "PENDING":
+						stateColor = "yellow"
+					}
+
 					output.PrintMessage("\n=== Pipeline #%d ===", p.BuildNumber)
-					output.PrintMessage("State:  %s", p.State.Name)
-					output.PrintMessage("Result: %s", result)
+					output.PrintMessage("State:  %s", output.ColorText(p.State.Name, stateColor))
+					output.PrintMessage("Result: %s", output.ColorText(result, resultColor))
 					output.PrintMessage("Branch: %s", p.Target.RefName)
 
-					// Display steps
+					// Display steps with colors
 					if len(steps) > 0 {
 						output.PrintMessage("\nSteps:")
 						for _, s := range steps {
 							stepResult := "–"
+							stepResultColor := "gray"
 							if s.State.Result != nil {
 								stepResult = s.State.Result.Name
+								switch stepResult {
+								case "SUCCESSFUL":
+									stepResultColor = "green"
+								case "FAILED", "ERROR":
+									stepResultColor = "red"
+								case "STOPPED":
+									stepResultColor = "yellow"
+								}
 							}
-							output.PrintMessage("  - %s: %s (%s)", s.Name, s.State.Name, stepResult)
+
+							stepStateColor := "gray"
+							switch s.State.Name {
+							case "COMPLETED":
+								stepStateColor = stepResultColor // Use result color for completed
+							case "IN_PROGRESS":
+								stepStateColor = "yellow"
+							case "PENDING":
+								stepStateColor = "gray"
+							}
+
+							output.PrintMessage("  - %s: %s (%s)",
+								s.Name,
+								output.ColorText(s.State.Name, stepStateColor),
+								output.ColorText(stepResult, stepResultColor))
 						}
 					}
 				}
