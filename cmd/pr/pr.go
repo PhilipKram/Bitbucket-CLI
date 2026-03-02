@@ -214,6 +214,7 @@ func newCmdCreate() *cobra.Command {
 	var destination string
 	var closeBranch bool
 	var reviewers []string
+	var noDefaultReviewers bool
 
 	cmd := &cobra.Command{
 		Use:   "create [workspace/repo-slug]",
@@ -249,6 +250,58 @@ func newCmdCreate() *cobra.Command {
 				return err
 			}
 
+			// Build final reviewers list: merge default reviewers + manual reviewers, deduplicated
+			finalReviewers := []string{}
+			seenUUIDs := make(map[string]bool)
+
+			// Fetch default reviewers if not disabled
+			var defaultReviewers []map[string]string
+			if !noDefaultReviewers {
+				defaults, err := fetchDefaultReviewers(client, repoSlug)
+				if err != nil {
+					// Don't fail PR creation, just warn
+					output.PrintMessage("Warning: Could not fetch default reviewers (%s), continuing with PR creation", err.Error())
+				} else {
+					defaultReviewers = defaults
+				}
+			}
+
+			// Get current user UUID for self-exclusion
+			var currentUserUUID string
+			if len(defaultReviewers) > 0 {
+				userData, err := client.Get("/user")
+				if err != nil {
+					output.PrintMessage("Warning: Could not fetch current user (%s), skipping self-exclusion", err.Error())
+				} else {
+					type User struct {
+						UUID string `json:"uuid"`
+					}
+					var user User
+					if err := json.Unmarshal(userData, &user); err == nil {
+						currentUserUUID = user.UUID
+					}
+				}
+			}
+
+			// Add default reviewers (excluding self)
+			var addedDefaultReviewers []map[string]string
+			for _, dr := range defaultReviewers {
+				uuid := dr["uuid"]
+				if uuid != "" && uuid != currentUserUUID && !seenUUIDs[uuid] {
+					finalReviewers = append(finalReviewers, uuid)
+					seenUUIDs[uuid] = true
+					addedDefaultReviewers = append(addedDefaultReviewers, dr)
+				}
+			}
+
+			// Add manual reviewers from --reviewer flag
+			for _, r := range reviewers {
+				if r != "" && !seenUUIDs[r] {
+					finalReviewers = append(finalReviewers, r)
+					seenUUIDs[r] = true
+				}
+			}
+
 			body := map[string]interface{}{
 				"title":               title,
 				"description":         description,
@@ -262,10 +315,11 @@ func newCmdCreate() *cobra.Command {
 					"branch": map[string]string{"name": destination},
 				}
 			}
-			if len(reviewers) > 0 {
-				revList := make([]map[string]string, len(reviewers))
-				for i, r := range reviewers {
-					revList[i] = map[string]string{"uuid": r}
+			if len(finalReviewers) > 0 {
+				revList := make([]map[string]string, len(finalReviewers))
+				for i, r := range finalReviewers {
+					normalizedUUID := cmdutil.NormalizeUUID(r)
+					revList[i] = map[string]string{"uuid": normalizedUUID}
 				}
 				body["reviewers"] = revList
 			}
@@ -282,6 +336,15 @@ func newCmdCreate() *cobra.Command {
 				return err
 			}
 			output.PrintMessage("Pull request #%d created: %s", pr.ID, pr.Links.HTML.Href)
+
+			// Show added default reviewers
+			if len(addedDefaultReviewers) > 0 {
+				names := make([]string, len(addedDefaultReviewers))
+				for i, r := range addedDefaultReviewers {
+					names[i] = r["display_name"]
+				}
+				output.PrintMessage("Added default reviewers: %s", strings.Join(names, ", "))
+			}
 			return nil
 		},
 	}
@@ -291,6 +354,7 @@ func newCmdCreate() *cobra.Command {
 	cmd.Flags().StringVar(&destination, "destination", "", "Destination branch (defaults to main branch)")
 	cmd.Flags().BoolVar(&closeBranch, "close-branch", false, "Close source branch after merge")
 	cmd.Flags().StringSliceVarP(&reviewers, "reviewer", "r", nil, "Reviewer UUIDs")
+	cmd.Flags().BoolVar(&noDefaultReviewers, "no-default-reviewers", false, "Skip auto-fetching default reviewers")
 	cmd.MarkFlagRequired("title")
 	return cmd
 }
@@ -713,4 +777,40 @@ func newCmdEdit() *cobra.Command {
 	cmd.Flags().StringVar(&destination, "destination", "", "New destination branch")
 	closeBranch = cmd.Flags().Bool("close-branch", false, "Close source branch after merge")
 	return cmd
+}
+
+// fetchDefaultReviewers retrieves the repository's default reviewers from the Bitbucket API.
+// Returns a slice of reviewer maps with "uuid" and "display_name" keys.
+func fetchDefaultReviewers(client *api.Client, repoSlug string) ([]map[string]string, error) {
+	path := fmt.Sprintf("/repositories/%s/default-reviewers", repoSlug)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var paginated api.PaginatedResponse
+	if err := json.Unmarshal(data, &paginated); err != nil {
+		return nil, err
+	}
+
+	type DefaultReviewer struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+	}
+
+	var reviewers []DefaultReviewer
+	if err := json.Unmarshal(paginated.Values, &reviewers); err != nil {
+		return nil, err
+	}
+
+	// Convert to the expected format
+	result := make([]map[string]string, len(reviewers))
+	for i, r := range reviewers {
+		result[i] = map[string]string{
+			"uuid":         r.UUID,
+			"display_name": r.DisplayName,
+		}
+	}
+
+	return result, nil
 }

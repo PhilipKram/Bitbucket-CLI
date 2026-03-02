@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 )
 
 func TestClient_Get(t *testing.T) {
@@ -99,10 +102,10 @@ func TestClient_Post_BodyBuffering(t *testing.T) {
 	resp.Body.Close()
 }
 
-func TestClient_HandleResponse_Error(t *testing.T) {
+func TestClient_HandleResponse_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
-		w.Write([]byte(`{"error":"not found"}`))
+		w.Write([]byte(`{"type":"error","error":{"message":"Repository not found"}}`))
 	}))
 	defer server.Close()
 
@@ -114,8 +117,260 @@ func TestClient_HandleResponse_Error(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
-	if got := err.Error(); got == "" {
-		t.Error("expected non-empty error message")
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 404 {
+		t.Errorf("StatusCode = %d, want 404", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Not found") {
+		t.Errorf("Message = %q, want to contain 'Not found'", bbErr.Message)
+	}
+	if bbErr.Suggestion == "" {
+		t.Error("expected non-empty suggestion for 404")
+	}
+}
+
+func TestClient_HandleResponse_Unauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"type":"error","error":{"message":"Invalid credentials"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "invalid-token",
+		RefreshToken: "", // No refresh token to prevent retry
+	})
+
+	_, err := client.GetRaw(server.URL + "/test")
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 401 {
+		t.Errorf("StatusCode = %d, want 401", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Authentication failed") {
+		t.Errorf("Message = %q, want to contain 'Authentication failed'", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Suggestion, "bb auth login") {
+		t.Errorf("Suggestion = %q, want to contain 'bb auth login'", bbErr.Suggestion)
+	}
+}
+
+func TestClient_HandleResponse_Forbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		w.Write([]byte(`{"type":"error","error":{"message":"Access denied"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := client.GetRaw(server.URL + "/forbidden")
+	if err == nil {
+		t.Fatal("expected error for 403 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 403 {
+		t.Errorf("StatusCode = %d, want 403", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Permission denied") {
+		t.Errorf("Message = %q, want to contain 'Permission denied'", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Suggestion, "permissions") {
+		t.Errorf("Suggestion = %q, want to contain 'permissions'", bbErr.Suggestion)
+	}
+}
+
+func TestClient_HandleResponse_RateLimit(t *testing.T) {
+	resetTime := fmt.Sprintf("%d", time.Now().Add(5*time.Minute).Unix())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Reset", resetTime)
+		w.WriteHeader(429)
+		w.Write([]byte(`{"type":"error","error":{"message":"Rate limit exceeded"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := client.GetRaw(server.URL + "/test")
+	if err == nil {
+		t.Fatal("expected error for 429 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 429 {
+		t.Errorf("StatusCode = %d, want 429", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Rate limit") {
+		t.Errorf("Message = %q, want to contain 'Rate limit'", bbErr.Message)
+	}
+	if bbErr.Suggestion == "" {
+		t.Error("expected non-empty suggestion for 429")
+	}
+}
+
+func TestClient_HandleResponse_BadRequest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		w.Write([]byte(`{"type":"error","error":{"message":"Invalid branch name","detail":"Branch names cannot contain spaces"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := client.GetRaw(server.URL + "/test")
+	if err == nil {
+		t.Fatal("expected error for 400 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 400 {
+		t.Errorf("StatusCode = %d, want 400", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Invalid branch name") {
+		t.Errorf("Message = %q, want to contain error message", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Message, "Branch names cannot contain spaces") {
+		t.Errorf("Message = %q, want to contain detail", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Suggestion, "request parameters") {
+		t.Errorf("Suggestion = %q, want to contain 'request parameters'", bbErr.Suggestion)
+	}
+}
+
+func TestClient_HandleResponse_Conflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(409)
+		w.Write([]byte(`{"type":"error","error":{"message":"Resource already exists"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := client.GetRaw(server.URL + "/test")
+	if err == nil {
+		t.Fatal("expected error for 409 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 409 {
+		t.Errorf("StatusCode = %d, want 409", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "Resource already exists") {
+		t.Errorf("Message = %q, want to contain error message", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Suggestion, "conflicts") {
+		t.Errorf("Suggestion = %q, want to contain 'conflicts'", bbErr.Suggestion)
+	}
+}
+
+func TestClient_HandleResponse_ServerError(t *testing.T) {
+	testCases := []struct {
+		name       string
+		statusCode int
+	}{
+		{"500 Internal Server Error", http.StatusInternalServerError},
+		{"502 Bad Gateway", http.StatusBadGateway},
+		{"503 Service Unavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+				w.Write([]byte(`{"type":"error","error":{"message":"Internal server error"}}`))
+			}))
+			defer server.Close()
+
+			client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+				AccessToken: "test-token",
+			})
+
+			_, err := client.GetRaw(server.URL + "/test")
+			if err == nil {
+				t.Fatalf("expected error for %d response", tc.statusCode)
+			}
+
+			// Validate structured error
+			bbErr, ok := err.(*errors.BBError)
+			if !ok {
+				t.Fatalf("expected *errors.BBError, got %T", err)
+			}
+			if bbErr.StatusCode != tc.statusCode {
+				t.Errorf("StatusCode = %d, want %d", bbErr.StatusCode, tc.statusCode)
+			}
+			if !strings.Contains(bbErr.Suggestion, "temporary") {
+				t.Errorf("Suggestion = %q, want to contain 'temporary'", bbErr.Suggestion)
+			}
+		})
+	}
+}
+
+func TestClient_HandleResponse_GenericError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(418) // I'm a teapot - unusual status code
+		w.Write([]byte(`{"type":"error","error":{"message":"Unusual error"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := client.GetRaw(server.URL + "/test")
+	if err == nil {
+		t.Fatal("expected error for 418 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 418 {
+		t.Errorf("StatusCode = %d, want 418", bbErr.StatusCode)
+	}
+	if !strings.Contains(bbErr.Message, "API error") {
+		t.Errorf("Message = %q, want to contain 'API error'", bbErr.Message)
+	}
+	if !strings.Contains(bbErr.Message, "418") {
+		t.Errorf("Message = %q, want to contain status code", bbErr.Message)
 	}
 }
 

@@ -8,6 +8,24 @@ import (
 	"text/tabwriter"
 )
 
+// ANSI color codes
+const (
+	ColorReset  = "\033[0m"
+	ColorGreen  = "\033[32m"
+	ColorRed    = "\033[31m"
+	ColorYellow = "\033[33m"
+	ColorGray   = "\033[90m"
+)
+
+// isTTY checks if stdout is a terminal
+func isTTY() bool {
+	fileInfo, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fileInfo.Mode() & os.ModeCharDevice) != 0
+}
+
 // PrintJSON prints data as indented JSON.
 func PrintJSON(data interface{}) {
 	out, err := json.MarshalIndent(data, "", "  ")
@@ -73,4 +91,37 @@ func Truncate(s string, maxLen int) string {
 		return string(runes[:maxLen])
 	}
 	return string(runes[:maxLen-3]) + "..."
+}
+
+// ColorText wraps text with the specified color.
+// Only applies color if output is a TTY.
+// Supported colors: green, red, yellow, gray
+func ColorText(text, color string) string {
+	if !isTTY() {
+		return text
+	}
+
+	var colorCode string
+	switch color {
+	case "green":
+		colorCode = ColorGreen
+	case "red":
+		colorCode = ColorRed
+	case "yellow":
+		colorCode = ColorYellow
+	case "gray":
+		colorCode = ColorGray
+	default:
+		return text
+	}
+
+	return colorCode + text + ColorReset
+}
+
+// ClearScreen clears the terminal screen and moves cursor to top-left.
+// Uses ANSI escape codes.
+func ClearScreen() {
+	if isTTY() {
+		fmt.Print("\033[2J\033[H")
+	}
 }

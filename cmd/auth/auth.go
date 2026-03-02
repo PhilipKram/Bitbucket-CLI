@@ -10,6 +10,7 @@ import (
 
 	authPkg "github.com/PhilipKram/bitbucket-cli/internal/auth"
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -111,11 +112,14 @@ func loginInteractive(clientID, clientSecret string) error {
 func loginWithToken() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	if !scanner.Scan() {
-		return fmt.Errorf("failed to read token from stdin")
+		return &errors.BBError{
+			Message:    "Failed to read token from stdin",
+			Suggestion: "Ensure a valid OAuth token is provided via stdin. Example: echo \"$TOKEN\" | bb auth login --with-token",
+		}
 	}
 	accessToken := strings.TrimSpace(scanner.Text())
 	if accessToken == "" {
-		return fmt.Errorf("empty token provided on stdin")
+		return errors.InvalidInput("token", "empty token provided")
 	}
 
 	token := &config.TokenData{
@@ -124,7 +128,7 @@ func loginWithToken() error {
 	}
 
 	if err := config.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save credentials: %w", err)
+		return errors.Wrap(err, "Failed to save credentials")
 	}
 
 	output.PrintMessage("Logged in to Bitbucket.")
@@ -166,23 +170,23 @@ func loginOAuthInteractive(reader *bufio.Reader, clientID, clientSecret string) 
 	}
 
 	if clientID == "" || clientSecret == "" {
-		return fmt.Errorf("both OAuth consumer key and secret are required")
+		return errors.InvalidInput("OAuth credentials", "both consumer key and secret are required")
 	}
 
 	// Persist OAuth credentials for future use and token refresh
 	cfg.OAuthKey = clientID
 	cfg.OAuthSecret = clientSecret
 	if err := config.SaveConfig(cfg); err != nil {
-		return fmt.Errorf("failed to save OAuth credentials: %w", err)
+		return errors.ConfigError(fmt.Sprintf("failed to save OAuth credentials: %v", err))
 	}
 
 	token, err := authPkg.Login(clientID, clientSecret)
 	if err != nil {
-		return fmt.Errorf("login failed: %w", err)
+		return errors.Wrap(err, "Login failed")
 	}
 
 	if err := config.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save token: %w", err)
+		return errors.ConfigError(fmt.Sprintf("failed to save token: %v", err))
 	}
 
 	fmt.Println()
@@ -205,23 +209,26 @@ func loginWeb(clientID, clientSecret string) error {
 	}
 
 	if clientID == "" || clientSecret == "" {
-		return fmt.Errorf("OAuth credentials required: use --client-id and --client-secret, or run 'bb auth login' interactively first")
+		return &errors.BBError{
+			Message:    "OAuth credentials required",
+			Suggestion: "Provide --client-id and --client-secret flags, or run 'bb auth login' interactively to save credentials for future use.",
+		}
 	}
 
 	// Persist for token refresh
 	cfg.OAuthKey = clientID
 	cfg.OAuthSecret = clientSecret
 	if err := config.SaveConfig(cfg); err != nil {
-		return fmt.Errorf("failed to save OAuth credentials: %w", err)
+		return errors.ConfigError(fmt.Sprintf("failed to save OAuth credentials: %v", err))
 	}
 
 	token, err := authPkg.Login(clientID, clientSecret)
 	if err != nil {
-		return fmt.Errorf("login failed: %w", err)
+		return errors.Wrap(err, "Login failed")
 	}
 
 	if err := config.SaveToken(token); err != nil {
-		return fmt.Errorf("failed to save token: %w", err)
+		return errors.ConfigError(fmt.Sprintf("failed to save token: %v", err))
 	}
 
 	output.PrintMessage("Logged in to Bitbucket.")
@@ -258,7 +265,7 @@ func newCmdStatus() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil || token.AccessToken == "" {
-				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
+				return errors.Unauthorized("Not logged in")
 			}
 
 			if jsonOut {
@@ -311,7 +318,7 @@ This is useful for piping into other tools:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil || token.AccessToken == "" {
-				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
+				return errors.Unauthorized("Not logged in")
 			}
 			fmt.Print(token.AccessToken)
 			return nil
@@ -328,11 +335,14 @@ func newCmdRefresh() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			token, err := config.LoadToken()
 			if err != nil || token.AccessToken == "" {
-				return fmt.Errorf("not logged in. Run 'bb auth login' to authenticate")
+				return errors.Unauthorized("Not logged in")
 			}
 
 			if token.RefreshToken == "" {
-				return fmt.Errorf("no refresh token stored")
+				return &errors.BBError{
+					Message:    "No refresh token available",
+					Suggestion: "Your current token doesn't support refresh. Run 'bb auth login' to re-authenticate and obtain a new token.",
+				}
 			}
 
 			cfg, err := config.LoadConfig()
@@ -340,16 +350,16 @@ func newCmdRefresh() *cobra.Command {
 				return err
 			}
 			if cfg.OAuthKey == "" || cfg.OAuthSecret == "" {
-				return fmt.Errorf("OAuth credentials not found. Run 'bb auth login' to re-authenticate")
+				return errors.ConfigError("OAuth credentials not found. Run 'bb auth login' to re-authenticate")
 			}
 
 			newToken, err := authPkg.RefreshAccessToken(cfg.OAuthKey, cfg.OAuthSecret, token.RefreshToken)
 			if err != nil {
-				return fmt.Errorf("refresh failed: %w", err)
+				return errors.Wrap(err, "Token refresh failed")
 			}
 
 			if err := config.SaveToken(newToken); err != nil {
-				return fmt.Errorf("failed to save refreshed token: %w", err)
+				return errors.ConfigError(fmt.Sprintf("failed to save refreshed token: %v", err))
 			}
 
 			output.PrintMessage("Token refreshed successfully.")

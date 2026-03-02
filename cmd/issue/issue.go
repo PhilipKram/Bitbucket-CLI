@@ -9,6 +9,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -91,12 +92,12 @@ func newCmdList() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse API response")
 			}
 
 			var issues []Issue
 			if err := json.Unmarshal(paginated.Values, &issues); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse issues data")
 			}
 
 			if jsonOut {
@@ -149,7 +150,7 @@ func newCmdView() *cobra.Command {
 
 			var issue Issue
 			if err := json.Unmarshal(data, &issue); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse issue data")
 			}
 
 			if jsonOut {
@@ -201,6 +202,10 @@ func newCmdCreate() *cobra.Command {
 		Short: "Create an issue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if title == "" {
+				return errors.InvalidInput("title", "title is required")
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
@@ -221,7 +226,7 @@ func newCmdCreate() *cobra.Command {
 
 			var issue Issue
 			if err := json.Unmarshal(data, &issue); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse created issue data")
 			}
 			output.PrintMessage("Issue #%d created: %s", issue.ID, issue.Links.HTML.Href)
 			return nil
@@ -322,7 +327,7 @@ func newCmdComments() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse API response")
 			}
 
 			var comments []struct {
@@ -336,7 +341,7 @@ func newCmdComments() *cobra.Command {
 				CreatedOn string `json:"created_on"`
 			}
 			if err := json.Unmarshal(paginated.Values, &comments); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse comments data")
 			}
 
 			if jsonOut {
@@ -372,7 +377,11 @@ func newCmdComment() *cobra.Command {
 				cmd.Flags().Changed("editor"),
 			)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "Failed to get comment body")
+			}
+
+			if resolvedBody == "" {
+				return errors.InvalidInput("comment body", "comment body cannot be empty")
 			}
 
 			client, err := api.NewClient()
