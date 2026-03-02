@@ -214,6 +214,7 @@ func newCmdCreate() *cobra.Command {
 	var destination string
 	var closeBranch bool
 	var reviewers []string
+	var noDefaultReviewers bool
 
 	cmd := &cobra.Command{
 		Use:   "create [workspace/repo-slug]",
@@ -291,6 +292,7 @@ func newCmdCreate() *cobra.Command {
 	cmd.Flags().StringVar(&destination, "destination", "", "Destination branch (defaults to main branch)")
 	cmd.Flags().BoolVar(&closeBranch, "close-branch", false, "Close source branch after merge")
 	cmd.Flags().StringSliceVarP(&reviewers, "reviewer", "r", nil, "Reviewer UUIDs")
+	cmd.Flags().BoolVar(&noDefaultReviewers, "no-default-reviewers", false, "Skip auto-fetching default reviewers")
 	cmd.MarkFlagRequired("title")
 	return cmd
 }
@@ -713,4 +715,40 @@ func newCmdEdit() *cobra.Command {
 	cmd.Flags().StringVar(&destination, "destination", "", "New destination branch")
 	closeBranch = cmd.Flags().Bool("close-branch", false, "Close source branch after merge")
 	return cmd
+}
+
+// fetchDefaultReviewers retrieves the repository's default reviewers from the Bitbucket API.
+// Returns a slice of reviewer maps with "uuid" and "display_name" keys.
+func fetchDefaultReviewers(client *api.Client, repoSlug string) ([]map[string]string, error) {
+	path := fmt.Sprintf("/repositories/%s/default-reviewers", repoSlug)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var paginated api.PaginatedResponse
+	if err := json.Unmarshal(data, &paginated); err != nil {
+		return nil, err
+	}
+
+	type DefaultReviewer struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+	}
+
+	var reviewers []DefaultReviewer
+	if err := json.Unmarshal(paginated.Values, &reviewers); err != nil {
+		return nil, err
+	}
+
+	// Convert to the expected format
+	result := make([]map[string]string, len(reviewers))
+	for i, r := range reviewers {
+		result[i] = map[string]string{
+			"uuid":         r.UUID,
+			"display_name": r.DisplayName,
+		}
+	}
+
+	return result, nil
 }
