@@ -284,11 +284,13 @@ func newCmdCreate() *cobra.Command {
 			}
 
 			// Add default reviewers (excluding self)
+			var addedDefaultReviewers []map[string]string
 			for _, dr := range defaultReviewers {
 				uuid := dr["uuid"]
 				if uuid != "" && uuid != currentUserUUID && !seenUUIDs[uuid] {
 					finalReviewers = append(finalReviewers, uuid)
 					seenUUIDs[uuid] = true
+					addedDefaultReviewers = append(addedDefaultReviewers, dr)
 				}
 			}
 
@@ -333,6 +335,15 @@ func newCmdCreate() *cobra.Command {
 				return err
 			}
 			output.PrintMessage("Pull request #%d created: %s", pr.ID, pr.Links.HTML.Href)
+
+			// Show added default reviewers
+			if len(addedDefaultReviewers) > 0 {
+				names := make([]string, len(addedDefaultReviewers))
+				for i, r := range addedDefaultReviewers {
+					names[i] = r["display_name"]
+				}
+				output.PrintMessage("Added default reviewers: %s", strings.Join(names, ", "))
+			}
 			return nil
 		},
 	}
