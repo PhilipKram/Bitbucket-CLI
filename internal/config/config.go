@@ -33,9 +33,17 @@ type TokenData struct {
 }
 
 func ConfigDir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
+	var base string
+	// Check XDG_CONFIG_HOME first (for Linux and tests)
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		base = xdg
+	} else {
+		// Fall back to os.UserConfigDir() for platform-specific defaults
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
+		}
 	}
 	dir := filepath.Join(base, AppName)
 	if err := os.MkdirAll(dir, 0700); err != nil {
