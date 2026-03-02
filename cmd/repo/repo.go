@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -77,7 +78,7 @@ func newCmdList() *cobra.Command {
 				workspace = client.GetConfig().DefaultWorkspace
 			}
 			if workspace == "" {
-				return fmt.Errorf("workspace is required (use --workspace or set default with 'bb config set-default-workspace')")
+				return errors.InvalidInput("workspace", "no workspace specified. Use --workspace flag or set a default with 'bb config set-default-workspace'")
 			}
 
 			path := fmt.Sprintf("/repositories/%s?pagelen=25&page=%d", url.PathEscape(workspace), page)
@@ -88,12 +89,12 @@ func newCmdList() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse repository list response")
 			}
 
 			var repos []Repository
 			if err := json.Unmarshal(paginated.Values, &repos); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse repository data")
 			}
 
 			if jsonOut {
@@ -143,7 +144,7 @@ func newCmdView() *cobra.Command {
 
 			var repo Repository
 			if err := json.Unmarshal(data, &repo); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse repository details")
 			}
 
 			if jsonOut {
@@ -201,7 +202,7 @@ func newCmdCreate() *cobra.Command {
 				workspace = client.GetConfig().DefaultWorkspace
 			}
 			if workspace == "" {
-				return fmt.Errorf("workspace is required")
+				return errors.InvalidInput("workspace", "no workspace specified. Use --workspace flag or set a default with 'bb config set-default-workspace'")
 			}
 
 			body := map[string]interface{}{
@@ -224,7 +225,7 @@ func newCmdCreate() *cobra.Command {
 
 			var repo Repository
 			if err := json.Unmarshal(data, &repo); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse created repository response")
 			}
 			output.PrintMessage("Repository created: %s", repo.Links.HTML.Href)
 			return nil
@@ -291,7 +292,7 @@ func newCmdFork() *cobra.Command {
 
 			var repo Repository
 			if err := json.Unmarshal(data, &repo); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse forked repository response")
 			}
 			output.PrintMessage("Repository forked: %s", repo.Links.HTML.Href)
 			return nil
@@ -329,7 +330,7 @@ func newCmdCommits() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse commits response")
 			}
 
 			var commits []struct {
@@ -341,7 +342,7 @@ func newCmdCommits() *cobra.Command {
 				} `json:"author"`
 			}
 			if err := json.Unmarshal(paginated.Values, &commits); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse commit data")
 			}
 
 			if jsonOut {
