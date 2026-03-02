@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 )
 
 // OAuthCallbackPort is the fixed port used for the OAuth callback server.
@@ -29,7 +30,11 @@ const OAuthCallbackPort = 8817
 func Login(clientID, clientSecret string) (*config.TokenData, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OAuthCallbackPort))
 	if err != nil {
-		return nil, fmt.Errorf("failed to start local server on port %d (is another instance running?): %w", OAuthCallbackPort, err)
+		return nil, &errors.BBError{
+			Message:    fmt.Sprintf("Failed to start local server on port %d", OAuthCallbackPort),
+			Suggestion: fmt.Sprintf("Ensure port %d is available. If another instance of 'bb auth login' is running, wait for it to complete or kill that process.", OAuthCallbackPort),
+			Err:        err,
+		}
 	}
 	redirectURI := fmt.Sprintf("http://localhost:%d/callback", OAuthCallbackPort)
 
@@ -49,7 +54,10 @@ func Login(clientID, clientSecret string) (*config.TokenData, error) {
 			}
 			// HTML-escape user-controlled error messages to prevent injection
 			fmt.Fprintf(w, "<html><body><h2>Authentication Failed</h2><p>%s</p><p>You can close this window.</p></body></html>", html.EscapeString(errMsg))
-			errCh <- fmt.Errorf("authorization failed: %s", errMsg)
+			errCh <- &errors.BBError{
+				Message:    fmt.Sprintf("Authorization failed: %s", errMsg),
+				Suggestion: "Check that you approved the OAuth authorization request in your browser. If you denied access, try running 'bb auth login' again and approve the request.",
+			}
 			return
 		}
 		fmt.Fprint(w, "<html><body><h2>Authentication Successful!</h2><p>You can close this window and return to the terminal.</p></body></html>")
@@ -88,7 +96,10 @@ func Login(clientID, clientSecret string) (*config.TokenData, error) {
 	case err := <-errCh:
 		return nil, err
 	case <-time.After(5 * time.Minute):
-		return nil, fmt.Errorf("authorization timed out after 5 minutes")
+		return nil, &errors.BBError{
+			Message:    "Authorization timed out after 5 minutes",
+			Suggestion: "Complete the OAuth authorization in your browser within 5 minutes. Run 'bb auth login' again to restart the process.",
+		}
 	}
 
 	// Exchange authorization code for tokens
@@ -111,22 +122,39 @@ func exchangeCode(clientID, clientSecret, code, redirectURI string) (*config.Tok
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("token exchange failed: %w", err)
+		return nil, errors.NetworkError(err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, errors.NetworkError(err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token exchange failed (HTTP %d): %s", resp.StatusCode, string(body))
+		message := fmt.Sprintf("Token exchange failed (HTTP %d): %s", resp.StatusCode, string(body))
+		suggestion := "Verify that your OAuth consumer key and secret are correct. Check that the OAuth consumer has the necessary permissions and is not disabled."
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			suggestion = "Your OAuth consumer key or secret is incorrect. Double-check the credentials in your Bitbucket workspace settings."
+		} else if resp.StatusCode == http.StatusForbidden {
+			suggestion = "Your OAuth consumer doesn't have permission to complete this request. Check the consumer's permissions in Bitbucket workspace settings."
+		}
+
+		return nil, &errors.BBError{
+			Message:    message,
+			Suggestion: suggestion,
+			StatusCode: resp.StatusCode,
+		}
 	}
 
 	var token config.TokenData
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, fmt.Errorf("failed to parse token response: %w", err)
+		return nil, &errors.BBError{
+			Message:    "Failed to parse token response from Bitbucket",
+			Suggestion: "This may be a temporary issue with Bitbucket's API. Try again in a few moments.",
+			Err:        err,
+		}
 	}
 	return &token, nil
 }
@@ -147,22 +175,37 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*config.To
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("token refresh failed: %w", err)
+		return nil, errors.NetworkError(err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, errors.NetworkError(err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+		message := fmt.Sprintf("Token refresh failed (HTTP %d): %s", resp.StatusCode, string(body))
+		suggestion := "Your refresh token may have expired. Run 'bb auth login' to re-authenticate."
+
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusBadRequest {
+			suggestion = "Your refresh token has expired or is invalid. Run 'bb auth login' to re-authenticate and obtain a new token."
+		}
+
+		return nil, &errors.BBError{
+			Message:    message,
+			Suggestion: suggestion,
+			StatusCode: resp.StatusCode,
+		}
 	}
 
 	var token config.TokenData
 	if err := json.Unmarshal(body, &token); err != nil {
-		return nil, fmt.Errorf("failed to parse token response: %w", err)
+		return nil, &errors.BBError{
+			Message:    "Failed to parse token response from Bitbucket",
+			Suggestion: "This may be a temporary issue with Bitbucket's API. Try again in a few moments.",
+			Err:        err,
+		}
 	}
 	return &token, nil
 }
