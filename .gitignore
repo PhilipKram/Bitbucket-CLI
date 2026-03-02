@@ -5,6 +5,11 @@ bb.exe
 # GoReleaser
 dist/
 
+# Test Coverage
+coverage.out
+coverage.html
+coverage.txt
+
 # OS
 .DS_Store
 Thumbs.db
