@@ -78,6 +78,7 @@ func NewCmdPR() *cobra.Command {
 	cmd.AddCommand(newCmdComment())
 	cmd.AddCommand(newCmdDiff())
 	cmd.AddCommand(newCmdActivity())
+	cmd.AddCommand(newCmdEdit())
 
 	return cmd
 }
@@ -420,6 +421,11 @@ func newCmdComments() *cobra.Command {
 				return nil
 			}
 
+			if len(comments) == 0 {
+				output.PrintMessage("No comments on this pull request.")
+				return nil
+			}
+
 			for _, c := range comments {
 				loc := ""
 				if c.Inline != nil {
@@ -610,5 +616,77 @@ func newCmdActivity() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	return cmd
+}
+
+func newCmdEdit() *cobra.Command {
+	var title string
+	var description string
+	var descriptionFile string
+	var useEditor bool
+	var destination string
+	var closeBranch *bool
+
+	cmd := &cobra.Command{
+		Use:   "edit <workspace/repo-slug> <pr-id>",
+		Short: "Edit a pull request",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]interface{}{}
+
+			if cmd.Flags().Changed("title") {
+				body["title"] = title
+			}
+			if cmd.Flags().Changed("description") || cmd.Flags().Changed("description-file") || cmd.Flags().Changed("editor") {
+				resolvedDesc, err := cmdutil.ResolveBody(
+					description, descriptionFile, useEditor,
+					cmd.Flags().Changed("description"),
+					cmd.Flags().Changed("description-file"),
+					cmd.Flags().Changed("editor"),
+				)
+				if err != nil {
+					return err
+				}
+				body["description"] = resolvedDesc
+			}
+			if cmd.Flags().Changed("destination") {
+				body["destination"] = map[string]interface{}{
+					"branch": map[string]string{"name": destination},
+				}
+			}
+			if cmd.Flags().Changed("close-branch") {
+				body["close_source_branch"] = *closeBranch
+			}
+
+			if len(body) == 0 {
+				return fmt.Errorf("no changes specified; use --title, --description, --destination, or --close-branch")
+			}
+
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
+
+			jsonBody, _ := json.Marshal(body)
+			path := fmt.Sprintf("/repositories/%s/pullrequests/%s", args[0], args[1])
+			data, err := client.Put(path, string(jsonBody))
+			if err != nil {
+				return err
+			}
+
+			var pr PullRequest
+			if err := json.Unmarshal(data, &pr); err != nil {
+				return err
+			}
+			output.PrintMessage("Pull request #%d updated: %s", pr.ID, pr.Links.HTML.Href)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&title, "title", "t", "", "New PR title")
+	cmd.Flags().StringVarP(&description, "description", "d", "", "New PR description")
+	cmd.Flags().StringVarP(&descriptionFile, "description-file", "F", "", "Read description from file (use - for stdin)")
+	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose description")
+	cmd.Flags().StringVar(&destination, "destination", "", "New destination branch")
+	closeBranch = cmd.Flags().Bool("close-branch", false, "Close source branch after merge")
 	return cmd
 }
