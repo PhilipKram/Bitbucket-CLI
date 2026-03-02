@@ -14,6 +14,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/auth"
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 )
 
 // Default HTTP client timeout. Override with BB_HTTP_TIMEOUT (seconds).
@@ -220,7 +221,7 @@ func handleResponse(resp *http.Response) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error (HTTP %d): %s", resp.StatusCode, string(body))
+		return nil, errors.ParseAPIError(resp, body)
 	}
 	return body, nil
 }
