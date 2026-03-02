@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
@@ -118,4 +119,123 @@ func TestOpenBrowser(t *testing.T) {
 	// We don't check the error because the test environment may not have
 	// a browser/display available. We just verify it doesn't panic.
 	_ = err
+}
+
+func TestExchangeCode_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			t.Error("expected basic auth")
+		}
+		if user != "test-client-id" || pass != "test-client-secret" {
+			t.Errorf("unexpected credentials: user=%q pass=%q", user, pass)
+		}
+
+		r.ParseForm()
+		if r.FormValue("grant_type") != "authorization_code" {
+			t.Errorf("expected grant_type=authorization_code, got %s", r.FormValue("grant_type"))
+		}
+		if r.FormValue("code") != "test-auth-code" {
+			t.Errorf("expected code=test-auth-code, got %s", r.FormValue("code"))
+		}
+
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token":  "new-access-token",
+			"refresh_token": "new-refresh-token",
+			"token_type":    "bearer",
+			"expires_in":    3600,
+		})
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	token, err := exchangeCode("test-client-id", "test-client-secret", "test-auth-code", "http://localhost:8817/callback")
+	if err != nil {
+		t.Fatalf("exchangeCode() error: %v", err)
+	}
+
+	if token.AccessToken != "new-access-token" {
+		t.Errorf("AccessToken = %q, want %q", token.AccessToken, "new-access-token")
+	}
+	if token.RefreshToken != "new-refresh-token" {
+		t.Errorf("RefreshToken = %q, want %q", token.RefreshToken, "new-refresh-token")
+	}
+}
+
+func TestExchangeCode_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"error":"invalid_client"}`))
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("bad-client", "bad-secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	if !strings.Contains(err.Error(), "HTTP 401") {
+		t.Errorf("expected HTTP 401 in error, got: %v", err)
+	}
+}
+
+func TestExchangeCode_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`invalid json`))
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "failed to parse token response") {
+		t.Errorf("expected parse error in message, got: %v", err)
+	}
+}
+
+func TestRefreshAccessToken_NetworkError(t *testing.T) {
+	// Use an invalid URL to trigger a network error
+	orig := config.TokenURL
+	config.TokenURL = "http://invalid-host-that-does-not-exist-12345.local"
+	defer func() { config.TokenURL = orig }()
+
+	_, err := RefreshAccessToken("client", "secret", "refresh")
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "token refresh failed") {
+		t.Errorf("expected 'token refresh failed' in error, got: %v", err)
+	}
+}
+
+func TestExchangeCode_NetworkError(t *testing.T) {
+	// Use an invalid URL to trigger a network error
+	orig := config.TokenURL
+	config.TokenURL = "http://invalid-host-that-does-not-exist-12345.local"
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+	if !strings.Contains(err.Error(), "token exchange failed") {
+		t.Errorf("expected 'token exchange failed' in error, got: %v", err)
+	}
 }
