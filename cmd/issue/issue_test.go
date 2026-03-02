@@ -2,6 +2,7 @@ package issue
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -621,3 +622,192 @@ func TestNewCmdCreate_ShorthandFlags(t *testing.T) {
 }
 
 const cobra_annotation_required = "cobra_annotation_bash_completion_one_required_flag"
+
+func TestNewCmdIssue_HasHelpText(t *testing.T) {
+	cmd := NewCmdIssue()
+	if cmd.Long == "" && cmd.Short == "" {
+		t.Error("issue command should have help text (Long or Short)")
+	}
+}
+
+func TestNewCmdList_HasLongDescription(t *testing.T) {
+	cmd := newCmdList()
+	// List command should have either Long or Short description
+	if cmd.Long == "" && cmd.Short == "" {
+		t.Error("list command should have description")
+	}
+}
+
+func TestIssueStruct_NullOptionalFields(t *testing.T) {
+	jsonData := `{
+		"id": 456,
+		"title": "Minimal Issue",
+		"state": "closed",
+		"priority": "trivial",
+		"kind": "enhancement",
+		"content": {"raw": ""},
+		"reporter": {"display_name": "User"},
+		"created_on": "2024-01-01T00:00:00Z",
+		"updated_on": "2024-01-01T00:00:00Z",
+		"votes": 0,
+		"links": {"html": {"href": "https://example.com"}},
+		"component": null,
+		"milestone": null,
+		"version": null,
+		"assignee": null
+	}`
+
+	var issue Issue
+	err := json.Unmarshal([]byte(jsonData), &issue)
+	if err != nil {
+		t.Fatalf("failed to unmarshal issue: %v", err)
+	}
+
+	if issue.Component != nil {
+		t.Error("Component should be nil")
+	}
+	if issue.Milestone != nil {
+		t.Error("Milestone should be nil")
+	}
+	if issue.Version != nil {
+		t.Error("Version should be nil")
+	}
+	if issue.Assignee != nil {
+		t.Error("Assignee should be nil")
+	}
+	if issue.Kind != "enhancement" {
+		t.Errorf("Kind = %q, want %q", issue.Kind, "enhancement")
+	}
+	if issue.State != "closed" {
+		t.Errorf("State = %q, want %q", issue.State, "closed")
+	}
+}
+
+func TestIssueStruct_EmptyContent(t *testing.T) {
+	jsonData := `{
+		"id": 789,
+		"title": "No Content Issue",
+		"state": "new",
+		"priority": "minor",
+		"kind": "proposal",
+		"content": {"raw": ""},
+		"reporter": {"display_name": "Reporter"},
+		"created_on": "2024-01-01T00:00:00Z",
+		"updated_on": "2024-01-01T00:00:00Z",
+		"votes": 10,
+		"links": {"html": {"href": "https://example.com"}}
+	}`
+
+	var issue Issue
+	err := json.Unmarshal([]byte(jsonData), &issue)
+	if err != nil {
+		t.Fatalf("failed to unmarshal issue: %v", err)
+	}
+
+	if issue.Content.Raw != "" {
+		t.Errorf("Content.Raw = %q, want empty string", issue.Content.Raw)
+	}
+	if issue.Votes != 10 {
+		t.Errorf("Votes = %d, want %d", issue.Votes, 10)
+	}
+}
+
+func TestNewCmdCreate_FlagTypes(t *testing.T) {
+	cmd := newCmdCreate()
+
+	titleFlag := cmd.Flags().Lookup("title")
+	if titleFlag == nil {
+		t.Fatal("title flag not found")
+	}
+	if titleFlag.Value.Type() != "string" {
+		t.Errorf("title flag type = %q, want %q", titleFlag.Value.Type(), "string")
+	}
+
+	kindFlag := cmd.Flags().Lookup("kind")
+	if kindFlag == nil {
+		t.Fatal("kind flag not found")
+	}
+	if kindFlag.Value.Type() != "string" {
+		t.Errorf("kind flag type = %q, want %q", kindFlag.Value.Type(), "string")
+	}
+}
+
+func TestNewCmdList_FlagTypes(t *testing.T) {
+	cmd := newCmdList()
+
+	pageFlag := cmd.Flags().Lookup("page")
+	if pageFlag == nil {
+		t.Fatal("page flag not found")
+	}
+	if pageFlag.Value.Type() != "int" {
+		t.Errorf("page flag type = %q, want %q", pageFlag.Value.Type(), "int")
+	}
+
+	jsonFlag := cmd.Flags().Lookup("json")
+	if jsonFlag == nil {
+		t.Fatal("json flag not found")
+	}
+	if jsonFlag.Value.Type() != "bool" {
+		t.Errorf("json flag type = %q, want %q", jsonFlag.Value.Type(), "bool")
+	}
+}
+
+func TestIssueStruct_VariousPriorities(t *testing.T) {
+	priorities := []string{"trivial", "minor", "major", "critical", "blocker"}
+
+	for _, priority := range priorities {
+		jsonData := fmt.Sprintf(`{
+			"id": 100,
+			"title": "Test",
+			"state": "open",
+			"priority": "%s",
+			"kind": "bug",
+			"content": {"raw": "test"},
+			"reporter": {"display_name": "User"},
+			"created_on": "2024-01-01T00:00:00Z",
+			"updated_on": "2024-01-01T00:00:00Z",
+			"votes": 0,
+			"links": {"html": {"href": "https://example.com"}}
+		}`, priority)
+
+		var issue Issue
+		err := json.Unmarshal([]byte(jsonData), &issue)
+		if err != nil {
+			t.Fatalf("failed to unmarshal issue with priority %s: %v", priority, err)
+		}
+
+		if issue.Priority != priority {
+			t.Errorf("Priority = %q, want %q", issue.Priority, priority)
+		}
+	}
+}
+
+func TestIssueStruct_VariousStates(t *testing.T) {
+	states := []string{"new", "open", "resolved", "on hold", "invalid", "duplicate", "wontfix", "closed"}
+
+	for _, state := range states {
+		jsonData := fmt.Sprintf(`{
+			"id": 100,
+			"title": "Test",
+			"state": "%s",
+			"priority": "major",
+			"kind": "bug",
+			"content": {"raw": "test"},
+			"reporter": {"display_name": "User"},
+			"created_on": "2024-01-01T00:00:00Z",
+			"updated_on": "2024-01-01T00:00:00Z",
+			"votes": 0,
+			"links": {"html": {"href": "https://example.com"}}
+		}`, state)
+
+		var issue Issue
+		err := json.Unmarshal([]byte(jsonData), &issue)
+		if err != nil {
+			t.Fatalf("failed to unmarshal issue with state %s: %v", state, err)
+		}
+
+		if issue.State != state {
+			t.Errorf("State = %q, want %q", issue.State, state)
+		}
+	}
+}
