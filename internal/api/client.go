@@ -104,7 +104,7 @@ func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType st
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, errors.NetworkError(err)
 	}
 
 	// Attempt token refresh on 401
@@ -122,7 +122,11 @@ func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType st
 		if contentType != "" {
 			req2.Header.Set("Content-Type", contentType)
 		}
-		return c.httpClient.Do(req2)
+		resp2, err := c.httpClient.Do(req2)
+		if err != nil {
+			return nil, errors.NetworkError(err)
+		}
+		return resp2, nil
 	}
 
 	return resp, nil
