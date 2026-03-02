@@ -198,6 +198,8 @@ func newCmdTrigger() *cobra.Command {
 	var branch string
 	var pattern string
 	var customPipe bool
+	var watch bool
+	var interval int
 
 	cmd := &cobra.Command{
 		Use:   "trigger <workspace/repo-slug>",
@@ -237,12 +239,21 @@ func newCmdTrigger() *cobra.Command {
 				return err
 			}
 			output.PrintMessage("Pipeline #%d triggered (UUID: %s)", p.BuildNumber, p.UUID)
+
+			// If watch flag is set, start watching the pipeline
+			if watch {
+				output.PrintMessage("Watching pipeline...")
+				return watchPipeline(client, args[0], p.UUID, interval, false)
+			}
+
 			return nil
 		},
 	}
 	cmd.Flags().StringVarP(&branch, "branch", "b", "main", "Branch to run pipeline on")
 	cmd.Flags().StringVar(&pattern, "pattern", "", "Custom pipeline pattern name")
 	cmd.Flags().BoolVar(&customPipe, "custom", false, "Trigger a custom pipeline")
+	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Watch pipeline after triggering")
+	cmd.Flags().IntVarP(&interval, "interval", "i", 5, "Polling interval in seconds (when watching)")
 	return cmd
 }
 
@@ -342,6 +353,146 @@ func newCmdLog() *cobra.Command {
 	}
 }
 
+// watchPipeline polls a pipeline and displays its status in real-time
+func watchPipeline(client *api.Client, repo, pipelineUUID string, interval int, jsonOut bool) error {
+	// Set up signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
+	// Poll the pipeline status
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	defer ticker.Stop()
+
+	for {
+		// Fetch pipeline details
+		path := fmt.Sprintf("/repositories/%s/pipelines/%s", repo, url.PathEscape(pipelineUUID))
+		data, err := client.Get(path)
+		if err != nil {
+			return err
+		}
+
+		var p Pipeline
+		if err := json.Unmarshal(data, &p); err != nil {
+			return err
+		}
+
+		// Fetch pipeline steps
+		stepsPath := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/", repo, url.PathEscape(pipelineUUID))
+		stepsData, err := client.Get(stepsPath)
+		if err != nil {
+			return err
+		}
+
+		var stepsPaginated api.PaginatedResponse
+		if err := json.Unmarshal(stepsData, &stepsPaginated); err != nil {
+			return err
+		}
+
+		var steps []PipelineStep
+		if err := json.Unmarshal(stepsPaginated.Values, &steps); err != nil {
+			return err
+		}
+
+		if jsonOut {
+			output.PrintJSON(map[string]interface{}{
+				"pipeline": p,
+				"steps":    steps,
+			})
+		} else {
+			// Clear screen for clean display
+			output.ClearScreen()
+
+			// Display pipeline status with colors
+			result := "–"
+			resultColor := "gray"
+			if p.State.Result != nil {
+				result = p.State.Result.Name
+				switch result {
+				case "SUCCESSFUL":
+					resultColor = "green"
+				case "FAILED", "ERROR":
+					resultColor = "red"
+				case "STOPPED":
+					resultColor = "yellow"
+				}
+			}
+
+			stateColor := "gray"
+			switch p.State.Name {
+			case "COMPLETED":
+				stateColor = resultColor // Use result color for completed
+			case "IN_PROGRESS", "PENDING":
+				stateColor = "yellow"
+			}
+
+			output.PrintMessage("\n=== Pipeline #%d ===", p.BuildNumber)
+			output.PrintMessage("State:  %s", output.ColorText(p.State.Name, stateColor))
+			output.PrintMessage("Result: %s", output.ColorText(result, resultColor))
+			output.PrintMessage("Branch: %s", p.Target.RefName)
+
+			// Display steps with colors
+			if len(steps) > 0 {
+				output.PrintMessage("\nSteps:")
+				for _, s := range steps {
+					stepResult := "–"
+					stepResultColor := "gray"
+					if s.State.Result != nil {
+						stepResult = s.State.Result.Name
+						switch stepResult {
+						case "SUCCESSFUL":
+							stepResultColor = "green"
+						case "FAILED", "ERROR":
+							stepResultColor = "red"
+						case "STOPPED":
+							stepResultColor = "yellow"
+						}
+					}
+
+					stepStateColor := "gray"
+					switch s.State.Name {
+					case "COMPLETED":
+						stepStateColor = stepResultColor // Use result color for completed
+					case "IN_PROGRESS":
+						stepStateColor = "yellow"
+					case "PENDING":
+						stepStateColor = "gray"
+					}
+
+					output.PrintMessage("  - %s: %s (%s)",
+						s.Name,
+						output.ColorText(s.State.Name, stepStateColor),
+						output.ColorText(stepResult, stepResultColor))
+				}
+			}
+		}
+
+		// Check if pipeline is in a terminal state
+		if p.State.Name == "COMPLETED" {
+			if p.State.Result != nil {
+				if p.State.Result.Name == "SUCCESSFUL" {
+					output.PrintMessage("\nPipeline completed successfully")
+					os.Exit(0)
+				} else {
+					output.PrintMessage("\nPipeline failed: %s", p.State.Result.Name)
+					os.Exit(1)
+				}
+			}
+			output.PrintMessage("\nPipeline completed")
+			os.Exit(0)
+		}
+
+		// Wait for next poll or signal interrupt
+		select {
+		case <-ticker.C:
+			// Continue to next iteration
+		case <-sigChan:
+			output.PrintMessage("\nWatch interrupted. Exiting gracefully...")
+			return nil
+		}
+	}
+}
+
 func newCmdWatch() *cobra.Command {
 	var buildNumber int
 	var interval int
@@ -415,142 +566,7 @@ func newCmdWatch() *cobra.Command {
 				}
 			}
 
-			// Set up signal handling for graceful shutdown
-			sigChan := make(chan os.Signal, 1)
-			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-			defer signal.Stop(sigChan)
-
-			// Poll the pipeline status
-			ticker := time.NewTicker(time.Duration(interval) * time.Second)
-			defer ticker.Stop()
-
-			for {
-				// Fetch pipeline details
-				path := fmt.Sprintf("/repositories/%s/pipelines/%s", repo, url.PathEscape(pipelineUUID))
-				data, err := client.Get(path)
-				if err != nil {
-					return err
-				}
-
-				var p Pipeline
-				if err := json.Unmarshal(data, &p); err != nil {
-					return err
-				}
-
-				// Fetch pipeline steps
-				stepsPath := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/", repo, url.PathEscape(pipelineUUID))
-				stepsData, err := client.Get(stepsPath)
-				if err != nil {
-					return err
-				}
-
-				var stepsPaginated api.PaginatedResponse
-				if err := json.Unmarshal(stepsData, &stepsPaginated); err != nil {
-					return err
-				}
-
-				var steps []PipelineStep
-				if err := json.Unmarshal(stepsPaginated.Values, &steps); err != nil {
-					return err
-				}
-
-				if jsonOut {
-					output.PrintJSON(map[string]interface{}{
-						"pipeline": p,
-						"steps":    steps,
-					})
-				} else {
-					// Clear screen for clean display
-					output.ClearScreen()
-
-					// Display pipeline status with colors
-					result := "–"
-					resultColor := "gray"
-					if p.State.Result != nil {
-						result = p.State.Result.Name
-						switch result {
-						case "SUCCESSFUL":
-							resultColor = "green"
-						case "FAILED", "ERROR":
-							resultColor = "red"
-						case "STOPPED":
-							resultColor = "yellow"
-						}
-					}
-
-					stateColor := "gray"
-					switch p.State.Name {
-					case "COMPLETED":
-						stateColor = resultColor // Use result color for completed
-					case "IN_PROGRESS", "PENDING":
-						stateColor = "yellow"
-					}
-
-					output.PrintMessage("\n=== Pipeline #%d ===", p.BuildNumber)
-					output.PrintMessage("State:  %s", output.ColorText(p.State.Name, stateColor))
-					output.PrintMessage("Result: %s", output.ColorText(result, resultColor))
-					output.PrintMessage("Branch: %s", p.Target.RefName)
-
-					// Display steps with colors
-					if len(steps) > 0 {
-						output.PrintMessage("\nSteps:")
-						for _, s := range steps {
-							stepResult := "–"
-							stepResultColor := "gray"
-							if s.State.Result != nil {
-								stepResult = s.State.Result.Name
-								switch stepResult {
-								case "SUCCESSFUL":
-									stepResultColor = "green"
-								case "FAILED", "ERROR":
-									stepResultColor = "red"
-								case "STOPPED":
-									stepResultColor = "yellow"
-								}
-							}
-
-							stepStateColor := "gray"
-							switch s.State.Name {
-							case "COMPLETED":
-								stepStateColor = stepResultColor // Use result color for completed
-							case "IN_PROGRESS":
-								stepStateColor = "yellow"
-							case "PENDING":
-								stepStateColor = "gray"
-							}
-
-							output.PrintMessage("  - %s: %s (%s)",
-								s.Name,
-								output.ColorText(s.State.Name, stepStateColor),
-								output.ColorText(stepResult, stepResultColor))
-						}
-					}
-				}
-
-				// Check if pipeline is in a terminal state
-				if p.State.Name == "COMPLETED" {
-					if p.State.Result != nil {
-						if p.State.Result.Name == "SUCCESSFUL" {
-							output.PrintMessage("\nPipeline completed successfully")
-							os.Exit(0)
-						} else {
-							output.PrintMessage("\nPipeline failed: %s", p.State.Result.Name)
-							os.Exit(1)
-						}
-					}
-					output.PrintMessage("\nPipeline completed")
-					os.Exit(0)
-				}
-
-				// Wait for next poll or signal interrupt
-				select {
-				case <-ticker.C:
-					// Continue to next iteration
-				case <-sigChan:
-					output.PrintMessage("\nWatch interrupted. Exiting gracefully...")
-					return nil
-				}
-			}
+			return watchPipeline(client, repo, pipelineUUID, interval, jsonOut)
 		},
 	}
 	cmd.Flags().IntVarP(&buildNumber, "build", "b", 0, "Build number to watch (0 = latest)")
