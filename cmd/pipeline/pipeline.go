@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -412,6 +415,11 @@ func newCmdWatch() *cobra.Command {
 				}
 			}
 
+			// Set up signal handling for graceful shutdown
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+			defer signal.Stop(sigChan)
+
 			// Poll the pipeline status
 			ticker := time.NewTicker(time.Duration(interval) * time.Second)
 			defer ticker.Stop()
@@ -490,8 +498,14 @@ func newCmdWatch() *cobra.Command {
 					return nil
 				}
 
-				// Wait for next poll
-				<-ticker.C
+				// Wait for next poll or signal interrupt
+				select {
+				case <-ticker.C:
+					// Continue to next iteration
+				case <-sigChan:
+					output.PrintMessage("\nWatch interrupted. Exiting gracefully...")
+					return nil
+				}
 			}
 		},
 	}
