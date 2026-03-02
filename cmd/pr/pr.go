@@ -250,6 +250,56 @@ func newCmdCreate() *cobra.Command {
 				return err
 			}
 
+			// Build final reviewers list: merge default reviewers + manual reviewers, deduplicated
+			finalReviewers := []string{}
+			seenUUIDs := make(map[string]bool)
+
+			// Fetch default reviewers if not disabled
+			var defaultReviewers []map[string]string
+			if !noDefaultReviewers {
+				defaults, err := fetchDefaultReviewers(client, repoSlug)
+				if err != nil {
+					// Don't fail PR creation, just warn
+					output.PrintMessage("Warning: Could not fetch default reviewers (%s), continuing with PR creation", err.Error())
+				} else {
+					defaultReviewers = defaults
+				}
+			}
+
+			// Get current user UUID for self-exclusion
+			var currentUserUUID string
+			if len(defaultReviewers) > 0 {
+				userData, err := client.Get("/user")
+				if err != nil {
+					output.PrintMessage("Warning: Could not fetch current user (%s), skipping self-exclusion", err.Error())
+				} else {
+					type User struct {
+						UUID string `json:"uuid"`
+					}
+					var user User
+					if err := json.Unmarshal(userData, &user); err == nil {
+						currentUserUUID = user.UUID
+					}
+				}
+			}
+
+			// Add default reviewers (excluding self)
+			for _, dr := range defaultReviewers {
+				uuid := dr["uuid"]
+				if uuid != "" && uuid != currentUserUUID && !seenUUIDs[uuid] {
+					finalReviewers = append(finalReviewers, uuid)
+					seenUUIDs[uuid] = true
+				}
+			}
+
+			// Add manual reviewers from --reviewer flag
+			for _, r := range reviewers {
+				if r != "" && !seenUUIDs[r] {
+					finalReviewers = append(finalReviewers, r)
+					seenUUIDs[r] = true
+				}
+			}
+
 			body := map[string]interface{}{
 				"title":               title,
 				"description":         description,
@@ -263,9 +313,9 @@ func newCmdCreate() *cobra.Command {
 					"branch": map[string]string{"name": destination},
 				}
 			}
-			if len(reviewers) > 0 {
-				revList := make([]map[string]string, len(reviewers))
-				for i, r := range reviewers {
+			if len(finalReviewers) > 0 {
+				revList := make([]map[string]string, len(finalReviewers))
+				for i, r := range finalReviewers {
 					revList[i] = map[string]string{"uuid": r}
 				}
 				body["reviewers"] = revList
