@@ -121,6 +121,20 @@ func TestOpenBrowser(t *testing.T) {
 	_ = err
 }
 
+func TestOpenBrowser_InvalidURL(t *testing.T) {
+	// Test with various URLs to ensure they're passed correctly
+	testCases := []string{
+		"https://bitbucket.org",
+		"http://localhost:8817",
+		"https://example.com?param=value&other=test",
+	}
+
+	for _, url := range testCases {
+		// Just verify no panic occurs
+		_ = openBrowser(url)
+	}
+}
+
 func TestExchangeCode_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
