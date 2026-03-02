@@ -7,17 +7,24 @@ import (
 	"testing"
 )
 
-func TestConfigDir_UsesUserConfigDir(t *testing.T) {
-	// Set up a temp dir and configure HOME to ensure os.UserConfigDir() uses it
-	tmpDir := t.TempDir()
-
-	// Set HOME environment variable to temp dir (works cross-platform)
+// setTempHome overrides environment variables so os.UserConfigDir() resolves
+// under tmpDir on all platforms (including Linux CI where XDG_CONFIG_HOME
+// would otherwise take precedence over HOME).
+func setTempHome(t *testing.T, tmpDir string) {
+	t.Helper()
 	t.Setenv("HOME", tmpDir)
-
-	// On Windows, also set USERPROFILE
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", tmpDir)
 	}
+	if runtime.GOOS == "linux" {
+		t.Setenv("XDG_CONFIG_HOME", "")
+	}
+}
+
+func TestConfigDir_UsesUserConfigDir(t *testing.T) {
+	// Set up a temp dir and configure HOME to ensure os.UserConfigDir() uses it
+	tmpDir := t.TempDir()
+	setTempHome(t, tmpDir)
 
 	dir, err := ConfigDir()
 	if err != nil {
@@ -53,10 +60,7 @@ func TestConfigDir_UsesUserConfigDir(t *testing.T) {
 
 func TestSaveAndLoadConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	}
+	setTempHome(t, tmpDir)
 
 	cfg := &Config{
 		DefaultWorkspace: "myworkspace",
@@ -87,10 +91,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 func TestLoadConfig_DefaultsWhenMissing(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	}
+	setTempHome(t, tmpDir)
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -103,10 +104,7 @@ func TestLoadConfig_DefaultsWhenMissing(t *testing.T) {
 
 func TestSaveAndLoadToken(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	}
+	setTempHome(t, tmpDir)
 
 	token := &TokenData{
 		AccessToken:  "access123",
@@ -134,10 +132,7 @@ func TestSaveAndLoadToken(t *testing.T) {
 
 func TestClearToken(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	}
+	setTempHome(t, tmpDir)
 
 	token := &TokenData{
 		AccessToken: "access123",
@@ -158,10 +153,7 @@ func TestClearToken(t *testing.T) {
 
 func TestClearToken_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Setenv("HOME", tmpDir)
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", tmpDir)
-	}
+	setTempHome(t, tmpDir)
 
 	// Should not error when no token file exists
 	if err := ClearToken(); err != nil {
