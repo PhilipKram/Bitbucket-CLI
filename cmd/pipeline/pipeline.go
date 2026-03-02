@@ -532,14 +532,14 @@ func newCmdWatch() *cobra.Command {
 					if p.State.Result != nil {
 						if p.State.Result.Name == "SUCCESSFUL" {
 							output.PrintMessage("\nPipeline completed successfully")
-							return nil
+							os.Exit(0)
 						} else {
 							output.PrintMessage("\nPipeline failed: %s", p.State.Result.Name)
-							return fmt.Errorf("pipeline failed")
+							os.Exit(1)
 						}
 					}
 					output.PrintMessage("\nPipeline completed")
-					return nil
+					os.Exit(0)
 				}
 
 				// Wait for next poll or signal interrupt
