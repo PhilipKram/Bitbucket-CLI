@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -87,12 +88,12 @@ func newCmdList() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse API response")
 			}
 
 			var branches []Branch
 			if err := json.Unmarshal(paginated.Values, &branches); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse branches data")
 			}
 
 			if jsonOut {
@@ -131,6 +132,10 @@ func newCmdCreate() *cobra.Command {
 		Short: "Create a branch",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if target == "" {
+				return errors.InvalidInput("target", "target commit hash is required")
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
@@ -150,7 +155,7 @@ func newCmdCreate() *cobra.Command {
 
 			var branch Branch
 			if err := json.Unmarshal(data, &branch); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse created branch data")
 			}
 			output.PrintMessage("Branch '%s' created at %s.", branch.Name, branch.Target.Hash[:12])
 			return nil
@@ -202,12 +207,12 @@ func newCmdTags() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse API response")
 			}
 
 			var tags []Tag
 			if err := json.Unmarshal(paginated.Values, &tags); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse tags data")
 			}
 
 			if jsonOut {
@@ -240,6 +245,10 @@ func newCmdTagCreate() *cobra.Command {
 		Short: "Create a tag",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if target == "" {
+				return errors.InvalidInput("target", "target commit hash is required")
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
@@ -262,7 +271,7 @@ func newCmdTagCreate() *cobra.Command {
 
 			var tag Tag
 			if err := json.Unmarshal(data, &tag); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse created tag data")
 			}
 			output.PrintMessage("Tag '%s' created at %s.", tag.Name, tag.Target.Hash[:12])
 			return nil
@@ -315,12 +324,12 @@ func newCmdRestrictions() *cobra.Command {
 
 			var paginated api.PaginatedResponse
 			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse API response")
 			}
 
 			var restrictions []BranchRestriction
 			if err := json.Unmarshal(paginated.Values, &restrictions); err != nil {
-				return err
+				return errors.Wrap(err, "Failed to parse restrictions data")
 			}
 
 			if jsonOut {
