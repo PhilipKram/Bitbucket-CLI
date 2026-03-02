@@ -318,7 +318,8 @@ func newCmdCreate() *cobra.Command {
 			if len(finalReviewers) > 0 {
 				revList := make([]map[string]string, len(finalReviewers))
 				for i, r := range finalReviewers {
-					revList[i] = map[string]string{"uuid": r}
+					normalizedUUID := cmdutil.NormalizeUUID(r)
+					revList[i] = map[string]string{"uuid": normalizedUUID}
 				}
 				body["reviewers"] = revList
 			}

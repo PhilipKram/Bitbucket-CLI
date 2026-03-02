@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -156,7 +157,7 @@ func newCmdView() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/repositories/%s/pipelines/%s", args[0], url.PathEscape(args[1]))
+			path := fmt.Sprintf("/repositories/%s/pipelines/%s", args[0], cmdutil.NormalizeUUID(args[1]))
 			data, err := client.Get(path)
 			if err != nil {
 				return err
@@ -267,7 +268,7 @@ func newCmdStop() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/repositories/%s/pipelines/%s/stopPipeline", args[0], url.PathEscape(args[1]))
+			path := fmt.Sprintf("/repositories/%s/pipelines/%s/stopPipeline", args[0], cmdutil.NormalizeUUID(args[1]))
 			_, err = client.Post(path, "")
 			if err != nil {
 				return err
@@ -290,7 +291,7 @@ func newCmdSteps() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/", args[0], url.PathEscape(args[1]))
+			path := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/", args[0], cmdutil.NormalizeUUID(args[1]))
 			data, err := client.Get(path)
 			if err != nil {
 				return err
@@ -342,7 +343,7 @@ func newCmdLog() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/%s/log",
-				args[0], url.PathEscape(args[1]), url.PathEscape(args[2]))
+				args[0], cmdutil.NormalizeUUID(args[1]), cmdutil.NormalizeUUID(args[2]))
 			data, err := client.Get(path)
 			if err != nil {
 				return err
