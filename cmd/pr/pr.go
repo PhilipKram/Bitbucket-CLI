@@ -10,6 +10,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
+	"github.com/PhilipKram/bitbucket-cli/internal/git"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -215,10 +216,34 @@ func newCmdCreate() *cobra.Command {
 	var reviewers []string
 
 	cmd := &cobra.Command{
-		Use:   "create <workspace/repo-slug>",
+		Use:   "create [workspace/repo-slug]",
 		Short: "Create a pull request",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Determine repository slug
+			repoSlug := ""
+			if len(args) > 0 {
+				repoSlug = args[0]
+			} else {
+				// Attempt auto-detection from git remote
+				workspace, repo, _, err := git.GetBitbucketContext("origin")
+				if err != nil {
+					return fmt.Errorf("failed to auto-detect repository from git remote: %w\nUse: bb pr create <workspace/repo-slug> --source <branch> --title <title>", err)
+				}
+				repoSlug = fmt.Sprintf("%s/%s", workspace, repo)
+			}
+
+			// Determine source branch
+			sourceBranch := source
+			if sourceBranch == "" {
+				// Attempt auto-detection from current branch
+				branch, err := git.GetCurrentBranch()
+				if err != nil {
+					return fmt.Errorf("failed to auto-detect current branch: %w\nUse --source <branch> to specify explicitly", err)
+				}
+				sourceBranch = branch
+			}
+
 			client, err := api.NewClient()
 			if err != nil {
 				return err
@@ -229,7 +254,7 @@ func newCmdCreate() *cobra.Command {
 				"description":         description,
 				"close_source_branch": closeBranch,
 				"source": map[string]interface{}{
-					"branch": map[string]string{"name": source},
+					"branch": map[string]string{"name": sourceBranch},
 				},
 			}
 			if destination != "" {
@@ -246,7 +271,7 @@ func newCmdCreate() *cobra.Command {
 			}
 
 			jsonBody, _ := json.Marshal(body)
-			path := fmt.Sprintf("/repositories/%s/pullrequests", args[0])
+			path := fmt.Sprintf("/repositories/%s/pullrequests", repoSlug)
 			data, err := client.Post(path, string(jsonBody))
 			if err != nil {
 				return err
@@ -262,12 +287,11 @@ func newCmdCreate() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&title, "title", "t", "", "PR title (required)")
 	cmd.Flags().StringVarP(&description, "description", "d", "", "PR description")
-	cmd.Flags().StringVarP(&source, "source", "s", "", "Source branch (required)")
+	cmd.Flags().StringVarP(&source, "source", "s", "", "Source branch (auto-detected from current branch if not specified)")
 	cmd.Flags().StringVar(&destination, "destination", "", "Destination branch (defaults to main branch)")
 	cmd.Flags().BoolVar(&closeBranch, "close-branch", false, "Close source branch after merge")
 	cmd.Flags().StringSliceVarP(&reviewers, "reviewer", "r", nil, "Reviewer UUIDs")
 	cmd.MarkFlagRequired("title")
-	cmd.MarkFlagRequired("source")
 	return cmd
 }
 
