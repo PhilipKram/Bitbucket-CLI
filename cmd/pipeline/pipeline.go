@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -348,8 +349,150 @@ func newCmdWatch() *cobra.Command {
 		Short: "Watch pipeline status in real-time",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TODO: Implement watch functionality
-			return fmt.Errorf("watch command not yet implemented")
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
+
+			repo := args[0]
+			var pipelineUUID string
+
+			// If buildNumber is 0, get the latest pipeline
+			if buildNumber == 0 {
+				path := fmt.Sprintf("/repositories/%s/pipelines/?pagelen=1&sort=-created_on", repo)
+				data, err := client.Get(path)
+				if err != nil {
+					return err
+				}
+
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(data, &paginated); err != nil {
+					return err
+				}
+
+				var pipelines []Pipeline
+				if err := json.Unmarshal(paginated.Values, &pipelines); err != nil {
+					return err
+				}
+
+				if len(pipelines) == 0 {
+					return fmt.Errorf("no pipelines found")
+				}
+
+				pipelineUUID = pipelines[0].UUID
+			} else {
+				// Get pipeline by build number
+				path := fmt.Sprintf("/repositories/%s/pipelines/?pagelen=100&sort=-created_on", repo)
+				data, err := client.Get(path)
+				if err != nil {
+					return err
+				}
+
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(data, &paginated); err != nil {
+					return err
+				}
+
+				var pipelines []Pipeline
+				if err := json.Unmarshal(paginated.Values, &pipelines); err != nil {
+					return err
+				}
+
+				found := false
+				for _, p := range pipelines {
+					if p.BuildNumber == buildNumber {
+						pipelineUUID = p.UUID
+						found = true
+						break
+					}
+				}
+
+				if !found {
+					return fmt.Errorf("pipeline #%d not found", buildNumber)
+				}
+			}
+
+			// Poll the pipeline status
+			ticker := time.NewTicker(time.Duration(interval) * time.Second)
+			defer ticker.Stop()
+
+			for {
+				// Fetch pipeline details
+				path := fmt.Sprintf("/repositories/%s/pipelines/%s", repo, url.PathEscape(pipelineUUID))
+				data, err := client.Get(path)
+				if err != nil {
+					return err
+				}
+
+				var p Pipeline
+				if err := json.Unmarshal(data, &p); err != nil {
+					return err
+				}
+
+				// Fetch pipeline steps
+				stepsPath := fmt.Sprintf("/repositories/%s/pipelines/%s/steps/", repo, url.PathEscape(pipelineUUID))
+				stepsData, err := client.Get(stepsPath)
+				if err != nil {
+					return err
+				}
+
+				var stepsPaginated api.PaginatedResponse
+				if err := json.Unmarshal(stepsData, &stepsPaginated); err != nil {
+					return err
+				}
+
+				var steps []PipelineStep
+				if err := json.Unmarshal(stepsPaginated.Values, &steps); err != nil {
+					return err
+				}
+
+				if jsonOut {
+					output.PrintJSON(map[string]interface{}{
+						"pipeline": p,
+						"steps":    steps,
+					})
+				} else {
+					// Display pipeline status
+					result := "–"
+					if p.State.Result != nil {
+						result = p.State.Result.Name
+					}
+					output.PrintMessage("\n=== Pipeline #%d ===", p.BuildNumber)
+					output.PrintMessage("State:  %s", p.State.Name)
+					output.PrintMessage("Result: %s", result)
+					output.PrintMessage("Branch: %s", p.Target.RefName)
+
+					// Display steps
+					if len(steps) > 0 {
+						output.PrintMessage("\nSteps:")
+						for _, s := range steps {
+							stepResult := "–"
+							if s.State.Result != nil {
+								stepResult = s.State.Result.Name
+							}
+							output.PrintMessage("  - %s: %s (%s)", s.Name, s.State.Name, stepResult)
+						}
+					}
+				}
+
+				// Check if pipeline is in a terminal state
+				if p.State.Name == "COMPLETED" {
+					if p.State.Result != nil {
+						if p.State.Result.Name == "SUCCESSFUL" {
+							output.PrintMessage("\nPipeline completed successfully")
+							return nil
+						} else {
+							output.PrintMessage("\nPipeline failed: %s", p.State.Result.Name)
+							return fmt.Errorf("pipeline failed")
+						}
+					}
+					output.PrintMessage("\nPipeline completed")
+					return nil
+				}
+
+				// Wait for next poll
+				<-ticker.C
+			}
 		},
 	}
 	cmd.Flags().IntVarP(&buildNumber, "build", "b", 0, "Build number to watch (0 = latest)")
