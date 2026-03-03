@@ -2,6 +2,7 @@ package update
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -29,8 +30,17 @@ type cache struct {
 	CheckedAt     time.Time `json:"checked_at"`
 }
 
-type ghRelease struct {
-	TagName string `json:"tag_name"`
+// GHRelease represents a GitHub release.
+type GHRelease struct {
+	TagName string           `json:"tag_name"`
+	Assets  []GHReleaseAsset `json:"assets"`
+}
+
+// GHReleaseAsset represents a downloadable asset in a GitHub release.
+type GHReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Size               int64  `json:"size"`
 }
 
 // CheckForUpdate checks whether a newer version is available.
@@ -107,9 +117,30 @@ func fetchLatestVersion() string {
 	}
 	defer resp.Body.Close()
 
-	var rel ghRelease
+	var rel GHRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		return ""
 	}
 	return rel.TagName
+}
+
+// FetchLatestRelease fetches the full latest release info from GitHub,
+// including assets. Uses the provided timeout (longer than background check).
+func FetchLatestRelease(timeout time.Duration) (*GHRelease, error) {
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(releaseURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var rel GHRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+		return nil, err
+	}
+	return &rel, nil
 }

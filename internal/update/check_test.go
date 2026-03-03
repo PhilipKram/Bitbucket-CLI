@@ -185,7 +185,7 @@ func TestFetchLatestVersion_Success(t *testing.T) {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(ghRelease{TagName: "v1.2.3"})
+		json.NewEncoder(w).Encode(GHRelease{TagName: "v1.2.3"})
 	}))
 	defer server.Close()
 
@@ -198,7 +198,7 @@ func TestFetchLatestVersion_Success(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var rel ghRelease
+	var rel GHRelease
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestFetchLatestVersion_InvalidJSON(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	var rel ghRelease
+	var rel GHRelease
 	err = json.NewDecoder(resp.Body).Decode(&rel)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
