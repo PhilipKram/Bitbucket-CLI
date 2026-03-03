@@ -8,6 +8,7 @@ import (
 
 	authCmd "github.com/PhilipKram/bitbucket-cli/cmd/auth"
 	branchCmd "github.com/PhilipKram/bitbucket-cli/cmd/branch"
+	completionCmd "github.com/PhilipKram/bitbucket-cli/cmd/completion"
 	configCmd "github.com/PhilipKram/bitbucket-cli/cmd/config"
 	issueCmd "github.com/PhilipKram/bitbucket-cli/cmd/issue"
 	"github.com/PhilipKram/bitbucket-cli/internal/update"
@@ -74,5 +75,6 @@ func init() {
 	rootCmd.AddCommand(snippetCmd.NewCmdSnippet())
 	rootCmd.AddCommand(userCmd.NewCmdUser())
 	rootCmd.AddCommand(configCmd.NewCmdConfig())
+	rootCmd.AddCommand(completionCmd.NewCmdCompletion())
 	rootCmd.AddCommand(newCmdUpgrade())
 }
