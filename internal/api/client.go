@@ -83,17 +83,24 @@ func (c *Client) setAuth(req *http.Request) {
 }
 
 func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	// Buffer the body so it can be replayed on 401 retry.
+	// Only buffer the body if we have a refresh token (for potential 401 retry) and body is non-nil
 	var bodyBytes []byte
-	if body != nil {
+	var bodyReader io.Reader
+
+	if c.token.RefreshToken != "" && body != nil {
+		// Buffer the body so it can be replayed on 401 retry
 		var err error
 		bodyBytes, err = io.ReadAll(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	} else {
+		// No retry possible or no body, use directly
+		bodyReader = body
 	}
 
-	req, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequest(method, urlStr, bodyReader)
 	if err != nil {
 		return nil, err
 	}
