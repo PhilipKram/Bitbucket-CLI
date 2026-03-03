@@ -102,6 +102,49 @@ func TestClient_Post_BodyBuffering(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestClient_Post_SkippedBuffering(t *testing.T) {
+	// Test that POST body is passed directly when no refresh token exists
+	// This verifies the optimization that skips buffering when token refresh is not possible
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"data":"test"}` {
+			t.Errorf("body = %q, want %q", string(body), `{"data":"test"}`)
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	// Create client with NO refresh token - this triggers the optimization
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken:  "test-token",
+		RefreshToken: "", // No refresh token means no buffering needed
+	})
+
+	// Make POST request with body - should work without buffering
+	resp, err := client.doRequest("POST", server.URL+"/test", strings.NewReader(`{"data":"test"}`), "application/json")
+	if err != nil {
+		t.Fatalf("Post() error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// Verify response body
+	var result map[string]bool
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !result["success"] {
+		t.Errorf("expected success=true")
+	}
+}
+
 func TestClient_Post_EmptyBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
