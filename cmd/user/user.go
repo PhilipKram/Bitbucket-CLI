@@ -146,18 +146,8 @@ func newCmdEmails() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := client.Get("/user/emails")
+			emails, err := api.GetPaginated[Email](client, "/user/emails")
 			if err != nil {
-				return err
-			}
-
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
-			}
-
-			var emails []Email
-			if err := json.Unmarshal(paginated.Values, &emails); err != nil {
 				return err
 			}
 
@@ -189,18 +179,8 @@ func newCmdSSHKeys() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := client.Get("/user/ssh-keys?pagelen=50")
+			keys, err := api.GetPaginated[SSHKey](client, "/user/ssh-keys?pagelen=50")
 			if err != nil {
-				return err
-			}
-
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
-			}
-
-			var keys []SSHKey
-			if err := json.Unmarshal(paginated.Values, &keys); err != nil {
 				return err
 			}
 
