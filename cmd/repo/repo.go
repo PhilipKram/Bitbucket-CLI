@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -306,6 +307,13 @@ func newCmdClone() *cobra.Command {
 				return err
 			}
 
+			// Extract workspace from args[0] (format: workspace/repo-slug)
+			parts := strings.SplitN(args[0], "/", 2)
+			if len(parts) != 2 {
+				return errors.InvalidInput("repository", "expected format: workspace/repo-slug")
+			}
+			workspace := parts[0]
+
 			// Fetch repository details to get clone URL
 			path := fmt.Sprintf("/repositories/%s", args[0])
 			data, err := client.Get(path)
@@ -351,6 +359,14 @@ func newCmdClone() *cobra.Command {
 				targetDir = args[1]
 			}
 
+			// Determine the actual directory that will be created by git clone
+			clonedDir := targetDir
+			if clonedDir == "" {
+				// If no target directory specified, git clone creates a directory
+				// with the repository slug name
+				clonedDir = repo.Slug
+			}
+
 			// Execute git clone
 			output.PrintMessage("Cloning %s...", repo.FullName)
 			var gitCmd *exec.Cmd
@@ -365,6 +381,12 @@ func newCmdClone() *cobra.Command {
 
 			if err := gitCmd.Run(); err != nil {
 				return fmt.Errorf("git clone failed: %w", err)
+			}
+
+			// Configure the cloned repository's local git config with bb.workspace
+			configCmd := exec.Command("git", "-C", clonedDir, "config", "--local", "bb.workspace", workspace)
+			if err := configCmd.Run(); err != nil {
+				return fmt.Errorf("failed to configure git workspace: %w", err)
 			}
 
 			output.PrintMessage("Repository cloned successfully.")
