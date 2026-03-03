@@ -318,6 +318,23 @@ func newCmdClone() *cobra.Command {
 			path := fmt.Sprintf("/repositories/%s", args[0])
 			data, err := client.Get(path)
 			if err != nil {
+				// Provide helpful error messages for common failure scenarios
+				if errors.IsNotFound(err) {
+					return &errors.BBError{
+						Message:    fmt.Sprintf("Repository '%s' not found", args[0]),
+						Suggestion: "Check that the repository exists and you have permission to access it. Verify the workspace and repository names are correct.",
+						StatusCode: 404,
+						Err:        err,
+					}
+				}
+				if errors.IsUnauthorized(err) {
+					return &errors.BBError{
+						Message:    "Authentication failed",
+						Suggestion: "Try running 'bb auth login' to authenticate with Bitbucket, or check that your access token is still valid.",
+						StatusCode: 401,
+						Err:        err,
+					}
+				}
 				return err
 			}
 
@@ -347,7 +364,11 @@ func newCmdClone() *cobra.Command {
 				if len(cloneURL) > 8 && cloneURL[:8] == "https://" {
 					tokenData, err := config.LoadToken()
 					if err != nil {
-						return fmt.Errorf("failed to load authentication token: %w", err)
+						return &errors.BBError{
+							Message:    "Failed to load authentication token",
+							Suggestion: "Try running 'bb auth login' to authenticate with Bitbucket.",
+							Err:        err,
+						}
 					}
 					cloneURL = fmt.Sprintf("https://x-token-auth:%s@%s", tokenData.AccessToken, cloneURL[8:])
 				}
@@ -367,6 +388,14 @@ func newCmdClone() *cobra.Command {
 				clonedDir = repo.Slug
 			}
 
+			// Check if directory already exists
+			if _, err := os.Stat(clonedDir); err == nil {
+				return &errors.BBError{
+					Message:    fmt.Sprintf("Directory '%s' already exists", clonedDir),
+					Suggestion: "Choose a different directory name or remove the existing directory before cloning.",
+				}
+			}
+
 			// Execute git clone
 			output.PrintMessage("Cloning %s...", repo.FullName)
 			var gitCmd *exec.Cmd
@@ -380,13 +409,13 @@ func newCmdClone() *cobra.Command {
 			gitCmd.Stderr = os.Stderr
 
 			if err := gitCmd.Run(); err != nil {
-				return fmt.Errorf("git clone failed: %w", err)
+				return errors.GitError("clone", err)
 			}
 
 			// Configure the cloned repository's local git config with bb.workspace
 			configCmd := exec.Command("git", "-C", clonedDir, "config", "--local", "bb.workspace", workspace)
 			if err := configCmd.Run(); err != nil {
-				return fmt.Errorf("failed to configure git workspace: %w", err)
+				return errors.GitError("config --local bb.workspace", err)
 			}
 
 			output.PrintMessage("Repository cloned successfully.")
