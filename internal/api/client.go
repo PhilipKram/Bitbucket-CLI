@@ -56,10 +56,41 @@ func NewClient() (*Client, error) {
 		}
 	}
 
+	// Configure HTTP transport with connection pooling
+	maxIdleConns := 100
+	if envMaxIdle := os.Getenv("BB_HTTP_MAX_IDLE_CONNS"); envMaxIdle != "" {
+		if val, err := strconv.Atoi(envMaxIdle); err == nil && val > 0 {
+			maxIdleConns = val
+		}
+	}
+
+	maxIdleConnsPerHost := 10
+	if envMaxIdlePerHost := os.Getenv("BB_HTTP_MAX_IDLE_CONNS_PER_HOST"); envMaxIdlePerHost != "" {
+		if val, err := strconv.Atoi(envMaxIdlePerHost); err == nil && val > 0 {
+			maxIdleConnsPerHost = val
+		}
+	}
+
+	idleConnTimeout := 90 * time.Second
+	if envIdleTimeout := os.Getenv("BB_HTTP_IDLE_CONN_TIMEOUT"); envIdleTimeout != "" {
+		if secs, err := strconv.Atoi(envIdleTimeout); err == nil && secs > 0 {
+			idleConnTimeout = time.Duration(secs) * time.Second
+		}
+	}
+
+	transport := &http.Transport{
+		MaxIdleConns:        maxIdleConns,
+		MaxIdleConnsPerHost: maxIdleConnsPerHost,
+		IdleConnTimeout:     idleConnTimeout,
+	}
+
 	return &Client{
-		httpClient: &http.Client{Timeout: timeout},
-		token:      token,
-		cfg:        cfg,
+		httpClient: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
+		token: token,
+		cfg:   cfg,
 	}, nil
 }
 
