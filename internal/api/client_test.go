@@ -18,6 +18,26 @@ import (
 	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 )
 
+// redirectTransport is a test helper that redirects requests to BitbucketAPI to a test server
+type redirectTransport struct {
+	base      http.RoundTripper
+	targetURL string
+}
+
+func (t *redirectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Redirect requests to config.BitbucketAPI to our test server
+	if strings.HasPrefix(req.URL.String(), config.BitbucketAPI) {
+		newURL := strings.Replace(req.URL.String(), config.BitbucketAPI, t.targetURL, 1)
+		parsedURL, err := url.Parse(newURL)
+		if err != nil {
+			return nil, err
+		}
+		req.URL = parsedURL
+		req.Host = parsedURL.Host
+	}
+	return t.base.RoundTrip(req)
+}
+
 func TestClient_Get(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
@@ -191,6 +211,269 @@ func TestClient_HandleResponse_NotFound(t *testing.T) {
 	}
 	if bbErr.Suggestion == "" {
 		t.Error("expected non-empty suggestion for 404")
+	}
+}
+
+func TestClient_GetPaginated_Success(t *testing.T) {
+	type TestRepo struct {
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			t.Errorf("expected GET, got %s", r.Method)
+		}
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer test-token" {
+			t.Errorf("expected Bearer test-token, got %s", auth)
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"size": 2,
+			"page": 1,
+			"pagelen": 10,
+			"values": [
+				{"slug": "repo1", "name": "Repository 1"},
+				{"slug": "repo2", "name": "Repository 2"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	// Create a custom HTTP client that redirects BitbucketAPI requests to our test server
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	results, err := GetPaginated[TestRepo](client, "/repositories")
+	if err != nil {
+		t.Fatalf("GetPaginated() error: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Errorf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Slug != "repo1" {
+		t.Errorf("results[0].Slug = %q, want %q", results[0].Slug, "repo1")
+	}
+	if results[1].Name != "Repository 2" {
+		t.Errorf("results[1].Name = %q, want %q", results[1].Name, "Repository 2")
+	}
+}
+
+func TestClient_GetPaginated_EmptyValues(t *testing.T) {
+	type TestItem struct {
+		ID string `json:"id"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"size": 0,
+			"page": 1,
+			"pagelen": 10,
+			"values": []
+		}`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	results, err := GetPaginated[TestItem](client, "/items")
+	if err != nil {
+		t.Fatalf("GetPaginated() error: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestClient_GetPaginated_NotFound(t *testing.T) {
+	type TestItem struct {
+		ID string `json:"id"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(404)
+		w.Write([]byte(`{"type":"error","error":{"message":"Repository not found"}}`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := GetPaginated[TestItem](client, "/missing")
+	if err == nil {
+		t.Fatal("expected error for 404 response")
+	}
+
+	// Validate structured error
+	bbErr, ok := err.(*errors.BBError)
+	if !ok {
+		t.Fatalf("expected *errors.BBError, got %T", err)
+	}
+	if bbErr.StatusCode != 404 {
+		t.Errorf("StatusCode = %d, want 404", bbErr.StatusCode)
+	}
+}
+
+func TestClient_GetPaginated_InvalidJSON(t *testing.T) {
+	type TestItem struct {
+		ID string `json:"id"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{invalid json`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	_, err := GetPaginated[TestItem](client, "/items")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+
+	if !strings.Contains(err.Error(), "failed to decode paginated response") {
+		t.Errorf("expected decode error, got: %v", err)
+	}
+}
+
+func TestClient_GetPaginated_MissingValuesField(t *testing.T) {
+	type TestItem struct {
+		ID string `json:"id"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"size": 0,
+			"page": 1,
+			"pagelen": 10
+		}`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	results, err := GetPaginated[TestItem](client, "/items")
+	if err != nil {
+		t.Fatalf("GetPaginated() error: %v", err)
+	}
+
+	// Missing "values" field should result in empty slice (Go's zero value for []T)
+	if results != nil && len(results) != 0 {
+		t.Errorf("expected empty/nil results, got %d items", len(results))
+	}
+}
+
+func TestClient_GetPaginated_ComplexType(t *testing.T) {
+	type Author struct {
+		DisplayName string `json:"display_name"`
+		UUID        string `json:"uuid"`
+	}
+	type PullRequest struct {
+		ID     int    `json:"id"`
+		Title  string `json:"title"`
+		State  string `json:"state"`
+		Author Author `json:"author"`
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`{
+			"size": 1,
+			"page": 1,
+			"pagelen": 10,
+			"values": [
+				{
+					"id": 123,
+					"title": "Fix bug",
+					"state": "OPEN",
+					"author": {
+						"display_name": "John Doe",
+						"uuid": "{abc-123}"
+					}
+				}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	httpClient := &http.Client{
+		Transport: &redirectTransport{
+			base:      http.DefaultTransport,
+			targetURL: server.URL,
+		},
+	}
+
+	client := NewClientWith(httpClient, &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	results, err := GetPaginated[PullRequest](client, "/pullrequests")
+	if err != nil {
+		t.Fatalf("GetPaginated() error: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	pr := results[0]
+	if pr.ID != 123 {
+		t.Errorf("pr.ID = %d, want 123", pr.ID)
+	}
+	if pr.Title != "Fix bug" {
+		t.Errorf("pr.Title = %q, want %q", pr.Title, "Fix bug")
+	}
+	if pr.Author.DisplayName != "John Doe" {
+		t.Errorf("pr.Author.DisplayName = %q, want %q", pr.Author.DisplayName, "John Doe")
 	}
 }
 
