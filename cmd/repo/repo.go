@@ -291,6 +291,8 @@ func newCmdFork() *cobra.Command {
 }
 
 func newCmdClone() *cobra.Command {
+	var protocol string
+
 	cmd := &cobra.Command{
 		Use:   "clone <workspace/repo-slug>",
 		Short: "Clone a repository",
@@ -313,17 +315,26 @@ func newCmdClone() *cobra.Command {
 				return errors.Wrap(err, "Failed to parse repository details")
 			}
 
-			// For now, just print a message that clone functionality will be implemented
-			output.PrintMessage("Clone functionality will be implemented for: %s", repo.FullName)
-			if len(repo.Links.Clone) > 0 {
-				output.PrintMessage("Available clone URLs:")
-				for _, c := range repo.Links.Clone {
-					output.PrintMessage("  %s: %s", c.Name, c.Href)
+			// Extract clone URL based on protocol flag
+			var cloneURL string
+			for _, c := range repo.Links.Clone {
+				if c.Name == protocol {
+					cloneURL = c.Href
+					break
 				}
 			}
+
+			if cloneURL == "" {
+				return errors.InvalidInput("protocol", fmt.Sprintf("no clone URL found for protocol '%s'", protocol))
+			}
+
+			// For now, just print a message that clone functionality will be implemented
+			output.PrintMessage("Clone functionality will be implemented for: %s", repo.FullName)
+			output.PrintMessage("Clone URL (%s): %s", protocol, cloneURL)
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&protocol, "protocol", "p", "https", "Clone protocol (https or ssh)")
 	return cmd
 }
 
