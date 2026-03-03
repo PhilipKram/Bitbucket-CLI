@@ -74,8 +74,18 @@ func newCmdList() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			workspaces, err := api.GetPaginated[Workspace](client, "/workspaces?pagelen=50")
+			data, err := client.Get("/workspaces?pagelen=50")
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var workspaces []Workspace
+			if err := json.Unmarshal(paginated.Values, &workspaces); err != nil {
 				return err
 			}
 
@@ -138,8 +148,18 @@ func newCmdMembers() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/workspaces/%s/members?pagelen=50", url.PathEscape(args[0]))
-			members, err := api.GetPaginated[WorkspaceMember](client, path)
+			data, err := client.Get(path)
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var members []WorkspaceMember
+			if err := json.Unmarshal(paginated.Values, &members); err != nil {
 				return err
 			}
 
@@ -173,8 +193,18 @@ func newCmdProjects() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/workspaces/%s/projects?pagelen=50", url.PathEscape(args[0]))
-			projects, err := api.GetPaginated[Project](client, path)
+			data, err := client.Get(path)
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var projects []Project
+			if err := json.Unmarshal(paginated.Values, &projects); err != nil {
 				return err
 			}
 

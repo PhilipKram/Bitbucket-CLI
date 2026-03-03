@@ -102,8 +102,18 @@ func newCmdList() *cobra.Command {
 			if state != "" {
 				path += "&state=" + url.QueryEscape(strings.ToUpper(state))
 			}
-			prs, err := api.GetPaginated[PullRequest](client, path)
+			data, err := client.Get(path)
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var prs []PullRequest
+			if err := json.Unmarshal(paginated.Values, &prs); err != nil {
 				return err
 			}
 
