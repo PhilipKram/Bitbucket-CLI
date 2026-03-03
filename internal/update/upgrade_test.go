@@ -69,6 +69,18 @@ func TestClassifyPath_GoInstall(t *testing.T) {
 	}
 }
 
+func TestClassifyPath_GoInstall_BoundaryCheck(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("GOPATH", tmpDir)
+
+	// $GOPATH/bin2/bb should NOT be classified as go-install
+	path := filepath.Join(tmpDir, "bin2", "bb")
+	got := classifyPath(path)
+	if got != InstallBinary {
+		t.Errorf("classifyPath(%q) = %d, want InstallBinary (%d)", path, got, InstallBinary)
+	}
+}
+
 func TestFindAssetURL(t *testing.T) {
 	assets := []GHReleaseAsset{
 		{Name: "bb_0.0.8_darwin_arm64.tar.gz", BrowserDownloadURL: "https://example.com/darwin_arm64.tar.gz"},
@@ -159,7 +171,7 @@ func TestExtractBinaryFromTarGz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to stat extracted binary: %v", err)
 	}
-	if info.Mode()&0755 == 0 {
+	if info.Mode()&0111 == 0 {
 		t.Errorf("expected executable permissions, got %v", info.Mode())
 	}
 }
@@ -230,11 +242,6 @@ func TestReplaceBinary(t *testing.T) {
 	if _, err := os.Stat(currentPath + ".old"); !os.IsNotExist(err) {
 		t.Error("expected .old file to be removed")
 	}
-
-	// Verify new path no longer exists
-	if _, err := os.Stat(newPath); !os.IsNotExist(err) {
-		t.Error("expected new path to be removed after rename")
-	}
 }
 
 func TestDownloadAsset(t *testing.T) {
@@ -283,17 +290,41 @@ func TestCheckUpgrade_AlreadyUpToDate(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// We need to temporarily override releaseURL for this test.
-	// Since releaseURL is a const, we test via the Upgrade function behavior.
-	// Instead, test CheckUpgrade with matching versions indirectly
-	// by testing that nil result means up-to-date.
-	// This is effectively tested via the existing CheckForUpdate tests.
-	// Here we just verify the nil, nil return convention.
+	// Override releaseURL to use mock server.
+	old := releaseURL
+	releaseURL = server.URL
+	t.Cleanup(func() { releaseURL = old })
 
-	// Since we can't easily mock the URL, we verify the version comparison logic
-	// by testing with a mock server through FetchLatestRelease indirectly.
-	// For now, verify the "already up to date" path works if we could call it.
-	t.Log("CheckUpgrade returns (nil, nil) when versions match - verified by integration")
+	rel, err := CheckUpgrade("v1.0.0", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rel != nil {
+		t.Errorf("expected nil release for same version, got %+v", rel)
+	}
+}
+
+func TestCheckUpgrade_NewerAvailable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"tag_name": "v2.0.0", "assets": [{"name": "bb_2.0.0_linux_amd64.tar.gz", "browser_download_url": "https://example.com/bb.tar.gz"}]}`))
+	}))
+	defer server.Close()
+
+	old := releaseURL
+	releaseURL = server.URL
+	t.Cleanup(func() { releaseURL = old })
+
+	rel, err := CheckUpgrade("v1.0.0", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rel == nil {
+		t.Fatal("expected non-nil release for newer version")
+	}
+	if rel.TagName != "v2.0.0" {
+		t.Errorf("expected tag v2.0.0, got %s", rel.TagName)
+	}
 }
 
 func TestCheckWritePermission(t *testing.T) {

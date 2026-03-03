@@ -12,8 +12,11 @@ import (
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
 )
 
+// releaseURL is the GitHub API endpoint for the latest release.
+// It is a var (not const) so tests can override it.
+var releaseURL = "https://api.github.com/repos/PhilipKram/Bitbucket-CLI/releases/latest"
+
 const (
-	releaseURL   = "https://api.github.com/repos/PhilipKram/Bitbucket-CLI/releases/latest"
 	cacheName    = "update_check.json"
 	cacheTTL     = 24 * time.Hour
 	fetchTimeout = 2 * time.Second

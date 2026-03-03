@@ -58,8 +58,11 @@ func classifyPath(resolved string) InstallMethod {
 		home, _ := os.UserHomeDir()
 		gopath = filepath.Join(home, "go")
 	}
-	if gopath != "" && strings.HasPrefix(resolved, filepath.Join(gopath, "bin")) {
-		return InstallGoInstall
+	if gopath != "" {
+		binDir := filepath.Join(gopath, "bin") + string(os.PathSeparator)
+		if strings.HasPrefix(resolved, binDir) || resolved == filepath.Join(gopath, "bin") {
+			return InstallGoInstall
+		}
 	}
 	return InstallBinary
 }
@@ -117,6 +120,13 @@ func Upgrade(currentVersion string, force bool) (*UpgradeResult, error) {
 
 // ApplyUpgrade downloads and installs the release, replacing the current binary.
 func ApplyUpgrade(currentVersion string, rel *GHRelease) (*UpgradeResult, error) {
+	if runtime.GOOS == "windows" {
+		return nil, &errors.BBError{
+			Message:    "Self-upgrade is not supported on Windows",
+			Suggestion: "Download the latest release manually from https://github.com/PhilipKram/Bitbucket-CLI/releases",
+		}
+	}
+
 	current := strings.TrimPrefix(currentVersion, "v")
 	latest := strings.TrimPrefix(rel.TagName, "v")
 
@@ -314,14 +324,28 @@ func extractBinaryFromZip(archivePath, destPath string) error {
 }
 
 // replaceBinary atomically replaces the current binary with the new one.
+// It first copies the new binary into the same directory as the current one
+// to avoid EXDEV errors when the temp dir is on a different filesystem.
 func replaceBinary(currentPath, newPath string) error {
+	destDir := filepath.Dir(currentPath)
 	oldPath := currentPath + ".old"
+
+	// Copy new binary into the same directory to avoid cross-device rename.
+	stagedPath, err := stageFile(newPath, destDir)
+	if err != nil {
+		return &errors.BBError{
+			Message:    "Failed to stage new binary",
+			Suggestion: "Try running with elevated permissions: sudo bb upgrade",
+			Err:        err,
+		}
+	}
 
 	// Remove any leftover .old file from a previous upgrade.
 	os.Remove(oldPath)
 
 	// Rename current → .old
 	if err := os.Rename(currentPath, oldPath); err != nil {
+		os.Remove(stagedPath)
 		return &errors.BBError{
 			Message:    "Failed to replace binary",
 			Suggestion: "Try running with elevated permissions: sudo bb upgrade",
@@ -329,10 +353,11 @@ func replaceBinary(currentPath, newPath string) error {
 		}
 	}
 
-	// Rename new → current
-	if err := os.Rename(newPath, currentPath); err != nil {
+	// Rename staged → current (same filesystem, no EXDEV)
+	if err := os.Rename(stagedPath, currentPath); err != nil {
 		// Try to rollback
 		_ = os.Rename(oldPath, currentPath)
+		os.Remove(stagedPath)
 		return &errors.BBError{
 			Message:    "Failed to install new binary",
 			Suggestion: "Try running with elevated permissions: sudo bb upgrade",
@@ -343,6 +368,40 @@ func replaceBinary(currentPath, newPath string) error {
 	// Clean up .old file
 	os.Remove(oldPath)
 	return nil
+}
+
+// stageFile copies src into destDir as a temp file and returns its path.
+func stageFile(src, destDir string) (string, error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	tmp, err := os.CreateTemp(destDir, ".bb-upgrade-*")
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := io.Copy(tmp, in); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", err
+	}
+
+	// Preserve executable permissions.
+	if err := tmp.Chmod(0755); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", err
+	}
+
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmp.Name())
+		return "", err
+	}
+
+	return tmp.Name(), nil
 }
 
 // checkWritePermission tests whether the binary path is writable.
