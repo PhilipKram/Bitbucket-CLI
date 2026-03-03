@@ -219,6 +219,26 @@ func GetRepositoryByFullName(fullName string) (*Repository, error) {
 	return &repo, nil
 }
 
+// PullRequest represents a Bitbucket pull request for completion purposes
+type PullRequest struct {
+	ID     int    `json:"id"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+	Author struct {
+		DisplayName string `json:"display_name"`
+	} `json:"author"`
+	Source struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+	} `json:"source"`
+	Destination struct {
+		Branch struct {
+			Name string `json:"name"`
+		} `json:"branch"`
+	} `json:"destination"`
+}
+
 // Branch represents a Bitbucket branch for completion purposes
 type Branch struct {
 	Name string `json:"name"`
@@ -300,4 +320,83 @@ func GetBranchNames(repoFullName string) ([]string, error) {
 	}
 
 	return names, nil
+}
+
+// PRNumbers returns a completion function that suggests PR numbers
+func PRNumbers(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Expect repository full name (workspace/repo-slug) as first argument
+	if len(args) < 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(args[0]))
+	prs, err := api.GetPaginated[PullRequest](client, path)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var suggestions []string
+	for _, pr := range prs {
+		suggestions = append(suggestions, fmt.Sprintf("%d", pr.ID))
+	}
+
+	return suggestions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// PRNumbersWithDescriptions returns a completion function that suggests PR numbers with descriptions
+func PRNumbersWithDescriptions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Expect repository full name (workspace/repo-slug) as first argument
+	if len(args) < 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(args[0]))
+	prs, err := api.GetPaginated[PullRequest](client, path)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var suggestions []string
+	for _, pr := range prs {
+		// Format: id\tdescription for shells that support descriptions
+		description := fmt.Sprintf("#%d: %s (%s → %s)", pr.ID, pr.Title, pr.Source.Branch.Name, pr.Destination.Branch.Name)
+		suggestions = append(suggestions, fmt.Sprintf("%d\t%s", pr.ID, description))
+	}
+
+	return suggestions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// GetPRNumbers retrieves all PR numbers for a specific repository
+func GetPRNumbers(repoFullName string) ([]string, error) {
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if repoFullName == "" {
+		return []string{}, nil
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(repoFullName))
+	prs, err := api.GetPaginated[PullRequest](client, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var numbers []string
+	for _, pr := range prs {
+		numbers = append(numbers, fmt.Sprintf("%d", pr.ID))
+	}
+
+	return numbers, nil
 }
