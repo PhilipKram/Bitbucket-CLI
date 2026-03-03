@@ -227,6 +227,40 @@ func (c *Client) Delete(path string) ([]byte, error) {
 	return handleResponse(resp)
 }
 
+// GetPaginated fetches a single page of paginated results from the Bitbucket API
+// and decodes them directly into a slice of T using a streaming JSON decoder.
+// This avoids the triple-allocation pattern (io.ReadAll -> json.RawMessage -> []T)
+// by decoding directly from the response body stream.
+func GetPaginated[T any](c *Client, path string) ([]T, error) {
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("GET", u, nil, "")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read error response: %w", err)
+		}
+		return nil, errors.ParseAPIError(resp, body)
+	}
+
+	// Use streaming decoder to parse directly from response body
+	// Decode into an anonymous struct that only extracts the Values field
+	var result struct {
+		Values []T `json:"values"`
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode paginated response: %w", err)
+	}
+
+	return result.Values, nil
+}
+
 func handleResponse(resp *http.Response) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
