@@ -99,6 +99,66 @@ func TestClient_Post_BodyBuffering(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestClient_Post_EmptyBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "" {
+			t.Errorf("expected no Content-Type header, got %q", ct)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if len(body) != 0 {
+			t.Errorf("expected empty body, got %q", string(body))
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"approved":true}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	// Use doRequest directly since Post prepends BitbucketAPI
+	resp, err := client.doRequest("POST", server.URL+"/approve", nil, "")
+	if err != nil {
+		t.Fatalf("Post() error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestClient_Post_WithJsonBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json, got %q", ct)
+		}
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"title":"test"}` {
+			t.Errorf("expected JSON body, got %q", string(body))
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{
+		AccessToken: "test-token",
+	})
+
+	resp, err := client.doRequest("POST", server.URL+"/test", strings.NewReader(`{"title":"test"}`), "application/json")
+	if err != nil {
+		t.Fatalf("Post() error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
 func TestClient_HandleResponse_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
