@@ -90,6 +90,7 @@ bb auth logout       # Remove stored credentials
 | `bb workspace`| Manage workspaces and projects     |
 | `bb user`     | Manage user account and settings   |
 | `bb config`   | Manage CLI configuration           |
+| `bb upgrade`  | Self-update to the latest version  |
 
 ### Pull requests
 
@@ -150,6 +151,15 @@ bb issue create myworkspace/myrepo --title "Bug" --priority critical
 bb issue comment myworkspace/myrepo 1 --body "Fixed in #42"
 ```
 
+### Upgrading
+
+```sh
+bb upgrade              # Self-update to the latest release
+bb upgrade --force      # Force upgrade (bypass install method check)
+```
+
+If you installed via Homebrew or `go install`, `bb upgrade` will suggest the appropriate command instead. Use `--force` to override.
+
 ## Configuration
 
 ```sh
@@ -177,7 +187,7 @@ The default output format is a human-readable table.
 
 ```
 Update available: v0.0.7 → v0.0.8
-Run `brew upgrade bb` to update
+Run `bb upgrade` to update
 ```
 
 The check adds no latency to commands and is skipped when output is piped.

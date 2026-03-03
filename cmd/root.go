@@ -54,7 +54,7 @@ Get started:
 		}
 		// Only print when stdout is a terminal.
 		if fi, err := os.Stdout.Stat(); err == nil && fi.Mode()&os.ModeCharDevice != 0 {
-			fmt.Fprintf(os.Stderr, "\nUpdate available: v%s → v%s\nRun `brew upgrade bb` to update\n", info.Current, info.Latest)
+			fmt.Fprintf(os.Stderr, "\nUpdate available: v%s → v%s\nRun `bb upgrade` to update\n", info.Current, info.Latest)
 		}
 	},
 }
@@ -74,4 +74,5 @@ func init() {
 	rootCmd.AddCommand(snippetCmd.NewCmdSnippet())
 	rootCmd.AddCommand(userCmd.NewCmdUser())
 	rootCmd.AddCommand(configCmd.NewCmdConfig())
+	rootCmd.AddCommand(newCmdUpgrade())
 }
