@@ -87,9 +87,19 @@ func newCmdList() *cobra.Command {
 			}
 
 			path := fmt.Sprintf("/repositories/%s?pagelen=25&page=%d", url.PathEscape(workspace), page)
-			repos, err := api.GetPaginated[Repository](client, path)
+			data, err := client.Get(path)
 			if err != nil {
 				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return errors.Wrap(err, "Failed to parse repository list response")
+			}
+
+			var repos []Repository
+			if err := json.Unmarshal(paginated.Values, &repos); err != nil {
+				return errors.Wrap(err, "Failed to parse repository data")
 			}
 
 			if jsonOut {
@@ -106,6 +116,10 @@ func newCmdList() *cobra.Command {
 				table.AddRow(r.Name, r.FullName, fmt.Sprintf("%v", r.IsPrivate), r.Language, mainBranch)
 			}
 			table.Print()
+
+			if paginated.Next != "" {
+				output.PrintMessage("\nMore results available. Use --page %d to see the next page.", page+1)
+			}
 			return nil
 		},
 	}
@@ -298,13 +312,96 @@ func newCmdClone() *cobra.Command {
 	var protocol string
 
 	cmd := &cobra.Command{
-		Use:   "clone <workspace/repo-slug> [directory]",
+		Use:   "clone [workspace/repo-slug] [directory]",
 		Short: "Clone a repository",
-		Args:  cobra.RangeArgs(1, 2),
+		Args:  cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := api.NewClient()
 			if err != nil {
 				return err
+			}
+
+			// Handle no-args mode: detect fork from current repository context
+			if len(args) == 0 {
+				// Get current directory
+				currentDir, err := os.Getwd()
+				if err != nil {
+					return errors.Wrap(err, "Failed to get current directory")
+				}
+
+				// Try to get git remote URL
+				gitCmd := exec.Command("git", "-C", currentDir, "remote", "get-url", "origin")
+				gitOutput, err := gitCmd.Output()
+				if err != nil {
+					return &errors.BBError{
+						Message:    "Not in a git repository with a remote",
+						Suggestion: "Run 'bb repo clone <workspace/repo-slug>' to clone a specific repository.",
+					}
+				}
+
+				remoteURL := strings.TrimSpace(string(gitOutput))
+
+				// Parse Bitbucket URL to extract workspace/repo
+				workspace, repoSlug, err := parseBitbucketURL(remoteURL)
+				if err != nil {
+					return &errors.BBError{
+						Message:    "Current repository is not a Bitbucket repository",
+						Suggestion: fmt.Sprintf("Remote URL: %s\nRun 'bb repo clone <workspace/repo-slug>' to clone a specific repository.", remoteURL),
+					}
+				}
+
+				// Check if user has a fork
+				path := fmt.Sprintf("/repositories/%s/%s/forks", workspace, repoSlug)
+				forksData, err := client.Get(path)
+				if err != nil {
+					return errors.Wrap(err, "Failed to check for forks")
+				}
+
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(forksData, &paginated); err != nil {
+					return errors.Wrap(err, "Failed to parse forks response")
+				}
+
+				var forks []Repository
+				if err := json.Unmarshal(paginated.Values, &forks); err != nil {
+					return errors.Wrap(err, "Failed to parse fork data")
+				}
+
+				// Get current user to match forks
+				userData, err := client.Get("/user")
+				if err != nil {
+					return errors.Wrap(err, "Failed to get current user")
+				}
+
+				var user struct {
+					UUID string `json:"uuid"`
+				}
+				if err := json.Unmarshal(userData, &user); err != nil {
+					return errors.Wrap(err, "Failed to parse user data")
+				}
+
+				// Find user's fork
+				var userFork *Repository
+				for _, fork := range forks {
+					if fork.Owner.UUID == user.UUID {
+						userFork = &fork
+						break
+					}
+				}
+
+				if userFork == nil {
+					return &errors.BBError{
+						Message:    fmt.Sprintf("You don't have a fork of %s/%s", workspace, repoSlug),
+						Suggestion: fmt.Sprintf("Create a fork first with 'bb repo fork %s/%s'", workspace, repoSlug),
+					}
+				}
+
+				// Clone the fork
+				output.PrintMessage("Found your fork: %s", userFork.FullName)
+				output.PrintMessage("Cloning fork...")
+
+				// Set args to fork's workspace/slug for the rest of the function
+				args = []string{userFork.FullName}
 			}
 
 			// Extract workspace from args[0] (format: workspace/repo-slug)
@@ -424,6 +521,31 @@ func newCmdClone() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&protocol, "protocol", "p", "https", "Clone protocol (https or ssh)")
 	return cmd
+}
+
+// parseBitbucketURL extracts workspace and repo slug from a Bitbucket remote URL
+func parseBitbucketURL(remoteURL string) (workspace, repoSlug string, err error) {
+	// Handle HTTPS URLs: https://bitbucket.org/workspace/repo.git
+	if strings.HasPrefix(remoteURL, "https://bitbucket.org/") {
+		parts := strings.TrimPrefix(remoteURL, "https://bitbucket.org/")
+		parts = strings.TrimSuffix(parts, ".git")
+		pathParts := strings.SplitN(parts, "/", 2)
+		if len(pathParts) == 2 {
+			return pathParts[0], pathParts[1], nil
+		}
+	}
+
+	// Handle SSH URLs: git@bitbucket.org:workspace/repo.git
+	if strings.HasPrefix(remoteURL, "git@bitbucket.org:") {
+		parts := strings.TrimPrefix(remoteURL, "git@bitbucket.org:")
+		parts = strings.TrimSuffix(parts, ".git")
+		pathParts := strings.SplitN(parts, "/", 2)
+		if len(pathParts) == 2 {
+			return pathParts[0], pathParts[1], nil
+		}
+	}
+
+	return "", "", fmt.Errorf("not a valid Bitbucket URL")
 }
 
 func newCmdCommits() *cobra.Command {
