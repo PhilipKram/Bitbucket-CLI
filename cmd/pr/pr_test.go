@@ -196,9 +196,9 @@ func TestNewCmdApprove_NoFlags(t *testing.T) {
 		t.Fatalf("failed to find approve command: %v", err)
 	}
 
-	// approve should have no custom flags (only inherited ones)
-	if approveCmd.Flags().NFlag() > 0 {
-		t.Error("approve command should have no custom flags")
+	// approve should have no custom local flags (only inherited ones)
+	if approveCmd.LocalFlags().HasFlags() {
+		t.Error("approve command should have no custom local flags")
 	}
 }
 
@@ -209,9 +209,9 @@ func TestNewCmdUnapprove_NoFlags(t *testing.T) {
 		t.Fatalf("failed to find unapprove command: %v", err)
 	}
 
-	// unapprove should have no custom flags (only inherited ones)
-	if unapproveCmd.Flags().NFlag() > 0 {
-		t.Error("unapprove command should have no custom flags")
+	// unapprove should have no custom local flags (only inherited ones)
+	if unapproveCmd.LocalFlags().HasFlags() {
+		t.Error("unapprove command should have no custom local flags")
 	}
 }
 
@@ -222,9 +222,9 @@ func TestNewCmdDecline_NoFlags(t *testing.T) {
 		t.Fatalf("failed to find decline command: %v", err)
 	}
 
-	// decline should have no custom flags (only inherited ones)
-	if declineCmd.Flags().NFlag() > 0 {
-		t.Error("decline command should have no custom flags")
+	// decline should have no custom local flags (only inherited ones)
+	if declineCmd.LocalFlags().HasFlags() {
+		t.Error("decline command should have no custom local flags")
 	}
 }
 
@@ -282,9 +282,9 @@ func TestNewCmdDiff_NoFlags(t *testing.T) {
 		t.Fatalf("failed to find diff command: %v", err)
 	}
 
-	// diff should have no custom flags (only inherited ones)
-	if diffCmd.Flags().NFlag() > 0 {
-		t.Error("diff command should have no custom flags")
+	// diff should have no custom local flags (only inherited ones)
+	if diffCmd.LocalFlags().HasFlags() {
+		t.Error("diff command should have no custom local flags")
 	}
 }
 

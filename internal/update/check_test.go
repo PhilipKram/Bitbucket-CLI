@@ -6,11 +6,23 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
 )
+
+// setTempHome overrides environment variables so config.ConfigDir() resolves
+// under tmpDir on all platforms, preventing writes to the real config dir.
+func setTempHome(t *testing.T, tmpDir string) {
+	t.Helper()
+	t.Setenv("HOME", tmpDir)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	if runtime.GOOS == "windows" {
+		t.Setenv("USERPROFILE", tmpDir)
+	}
+}
 
 func TestCheckForUpdate_DevVersion(t *testing.T) {
 	// Dev versions should not check for updates
@@ -29,16 +41,7 @@ func TestCheckForUpdate_EmptyVersion(t *testing.T) {
 }
 
 func TestCheckForUpdate_SameVersion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(ghRelease{TagName: "v1.0.0"})
-	}))
-	defer server.Close()
-
-	// Mock the release URL by testing fetchLatestVersion directly isn't ideal,
-	// but CheckForUpdate calls fetchLatestVersion which uses a hardcoded URL.
-	// Since we can't easily override the URL without refactoring, we test
-	// the caching behavior instead.
+	setTempHome(t, t.TempDir())
 
 	// Test with cached same version
 	setupTestCache(t, "1.0.0", time.Now())
@@ -51,7 +54,8 @@ func TestCheckForUpdate_SameVersion(t *testing.T) {
 }
 
 func TestCheckForUpdate_NewerVersionAvailable(t *testing.T) {
-	// Test with cached newer version
+	setTempHome(t, t.TempDir())
+
 	setupTestCache(t, "v2.0.0", time.Now())
 	defer cleanupTestCache(t)
 
@@ -68,7 +72,8 @@ func TestCheckForUpdate_NewerVersionAvailable(t *testing.T) {
 }
 
 func TestCheckForUpdate_WithoutVPrefix(t *testing.T) {
-	// Test version comparison without 'v' prefix
+	setTempHome(t, t.TempDir())
+
 	setupTestCache(t, "2.0.0", time.Now())
 	defer cleanupTestCache(t)
 
@@ -85,20 +90,14 @@ func TestCheckForUpdate_WithoutVPrefix(t *testing.T) {
 }
 
 func TestCheckForUpdate_ExpiredCache(t *testing.T) {
-	// Test with expired cache (older than 24 hours)
-	setupTestCache(t, "v2.0.0", time.Now().Add(-25*time.Hour))
-	defer cleanupTestCache(t)
-
-	// With expired cache, it should try to fetch from network
-	// Since we can't mock the network request easily, this will return nil
-	// (network fetch will fail in test environment)
-	info := CheckForUpdate("v1.0.0")
-	// In a real scenario with network, this would fetch fresh data
-	// In test, it should handle the failure gracefully
-	_ = info // Don't assert on info since network fetch will fail
+	// This test triggers a real network call to GitHub without assertions.
+	// Skip until update fetching is refactored to be testable without real network calls.
+	t.Skip("skipping until update fetching is refactored to allow mocking the network")
 }
 
 func TestReadCache_Valid(t *testing.T) {
+	setTempHome(t, t.TempDir())
+
 	setupTestCache(t, "v1.5.0", time.Now())
 	defer cleanupTestCache(t)
 
@@ -112,7 +111,7 @@ func TestReadCache_Valid(t *testing.T) {
 }
 
 func TestReadCache_NotExists(t *testing.T) {
-	cleanupTestCache(t)
+	setTempHome(t, t.TempDir())
 
 	_, err := readCache()
 	if err == nil {
@@ -121,6 +120,8 @@ func TestReadCache_NotExists(t *testing.T) {
 }
 
 func TestReadCache_Expired(t *testing.T) {
+	setTempHome(t, t.TempDir())
+
 	setupTestCache(t, "v1.0.0", time.Now().Add(-25*time.Hour))
 	defer cleanupTestCache(t)
 
@@ -134,6 +135,8 @@ func TestReadCache_Expired(t *testing.T) {
 }
 
 func TestReadCache_InvalidJSON(t *testing.T) {
+	setTempHome(t, t.TempDir())
+
 	dir, err := config.ConfigDir()
 	if err != nil {
 		t.Fatalf("failed to get config dir: %v", err)
@@ -153,6 +156,7 @@ func TestReadCache_InvalidJSON(t *testing.T) {
 }
 
 func TestWriteCache(t *testing.T) {
+	setTempHome(t, t.TempDir())
 	defer cleanupTestCache(t)
 
 	c := &cache{

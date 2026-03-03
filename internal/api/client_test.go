@@ -3,12 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -566,8 +566,8 @@ func TestClient_ErrorHandling_BadRequest(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
-	if !strings.Contains(err.Error(), "400") {
-		t.Errorf("expected error to mention 400, got: %v", err)
+	if !strings.Contains(err.Error(), "Invalid request") {
+		t.Errorf("expected error to mention 'Invalid request', got: %v", err)
 	}
 }
 
@@ -587,8 +587,8 @@ func TestClient_ErrorHandling_Forbidden(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 403 response")
 	}
-	if !strings.Contains(err.Error(), "403") {
-		t.Errorf("expected error to mention 403, got: %v", err)
+	if !errors.IsForbidden(err) {
+		t.Errorf("expected forbidden error, got: %v", err)
 	}
 }
 
@@ -608,8 +608,9 @@ func TestClient_ErrorHandling_ServerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
-	if !strings.Contains(err.Error(), "500") {
-		t.Errorf("expected error to mention 500, got: %v", err)
+	var bbErr *errors.BBError
+	if !stderrors.As(err, &bbErr) || bbErr.StatusCode != 500 {
+		t.Errorf("expected BBError with StatusCode 500, got: %v", err)
 	}
 }
 
@@ -629,39 +630,55 @@ func TestClient_ErrorHandling_EmptyResponse(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 502 response")
 	}
-	if !strings.Contains(err.Error(), "502") {
-		t.Errorf("expected error to mention 502, got: %v", err)
+	var bbErr *errors.BBError
+	if !stderrors.As(err, &bbErr) || bbErr.StatusCode != 502 {
+		t.Errorf("expected BBError with StatusCode 502, got: %v", err)
 	}
 }
 
 // TestClient_TokenRefresh_Unauthorized tests token refresh on 401
 func TestClient_TokenRefresh_Unauthorized(t *testing.T) {
-	var callCount int32
+	// Ensure token persistence during refresh writes to an isolated temp directory.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := atomic.AddInt32(&callCount, 1)
+	var apiCallCount int32
+	var tokenCallCount int32
+
+	// Mock OAuth token endpoint for refresh.
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tokenCallCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"access_token":"new-token","refresh_token":"test-refresh","expires_in":3600}`)
+	}))
+	defer tokenServer.Close()
+
+	origTokenURL := config.TokenURL
+	config.TokenURL = tokenServer.URL
+	defer func() { config.TokenURL = origTokenURL }()
+
+	// Mock API endpoint that first returns 401, then succeeds.
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&apiCallCount, 1)
+		auth := r.Header.Get("Authorization")
 
 		if count == 1 {
-			// First call: return 401
-			w.WriteHeader(401)
+			if auth != "Bearer test-token" {
+				t.Errorf("first request expected Authorization 'Bearer test-token', got %q", auth)
+			}
+			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":"Unauthorized"}`))
 			return
 		}
-
-		// Second call after refresh: check for new token
-		auth := r.Header.Get("Authorization")
-		if auth != "Bearer test-token" {
-			// In a real scenario, this would check for the new token
-			// but since we can't easily mock auth.RefreshAccessToken,
-			// we just verify the retry happened
-			t.Errorf("retry request missing auth header")
+		if auth != "Bearer new-token" {
+			t.Errorf("second request expected Authorization 'Bearer new-token', got %q", auth)
 		}
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"ok":true}`))
 	}))
-	defer server.Close()
+	defer apiServer.Close()
 
-	client := NewClientWith(server.Client(), &config.Config{
+	client := NewClientWith(apiServer.Client(), &config.Config{
 		OAuthKey:    "test-key",
 		OAuthSecret: "test-secret",
 	}, &config.TokenData{
@@ -669,19 +686,24 @@ func TestClient_TokenRefresh_Unauthorized(t *testing.T) {
 		RefreshToken: "test-refresh",
 	})
 
-	// This will fail because we can't mock auth.RefreshAccessToken
-	// but it verifies that the 401 handling code path is executed
-	_, err := client.GetRaw(server.URL + "/test")
-	if err == nil {
-		// If no error, verify we got the success response (unlikely without proper mock)
-		if callCount < 1 {
-			t.Error("expected at least one API call")
-		}
-	} else {
-		// Expected: refresh will fail since we can't mock the token endpoint
-		if callCount != 1 {
-			t.Errorf("expected 1 call before refresh failure, got %d", callCount)
-		}
+	data, err := client.GetRaw(apiServer.URL + "/test")
+	if err != nil {
+		t.Fatalf("GetRaw() error: %v", err)
+	}
+
+	var resp struct{ Ok bool }
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if !resp.Ok {
+		t.Fatal("expected ok=true in response")
+	}
+
+	if got := atomic.LoadInt32(&apiCallCount); got != 2 {
+		t.Errorf("expected 2 API calls (401 + retry), got %d", got)
+	}
+	if got := atomic.LoadInt32(&tokenCallCount); got != 1 {
+		t.Errorf("expected 1 token refresh call, got %d", got)
 	}
 }
 
@@ -703,8 +725,8 @@ func TestClient_TokenRefresh_NoRefreshToken(t *testing.T) {
 		t.Fatal("expected error for 401 without refresh token")
 	}
 	// Should get the 401 error, not attempt refresh
-	if !strings.Contains(err.Error(), "401") {
-		t.Errorf("expected error to mention 401, got: %v", err)
+	if !errors.IsUnauthorized(err) {
+		t.Errorf("expected unauthorized error, got: %v", err)
 	}
 }
 
@@ -893,14 +915,18 @@ func TestClient_DoRequest_WithContentType(t *testing.T) {
 
 // TestClient_ErrorHandling_NetworkError tests network error handling
 func TestClient_ErrorHandling_NetworkError(t *testing.T) {
+	// Use a closed httptest.Server to trigger a deterministic connection error
+	server := httptest.NewServer(http.NewServeMux())
+	serverURL := server.URL
+	server.Close()
+
 	client := NewClientWith(&http.Client{}, &config.Config{}, &config.TokenData{
 		AccessToken: "test-token",
 	})
 
-	// Try to connect to an invalid URL
-	_, err := client.GetRaw("http://invalid-host-that-does-not-exist-12345.local/test")
+	_, err := client.GetRaw(serverURL + "/test")
 	if err == nil {
-		t.Fatal("expected error for invalid host")
+		t.Fatal("expected error for closed server")
 	}
 }
 
@@ -937,8 +963,12 @@ func TestClient_MultipleErrorStatusCodes(t *testing.T) {
 			if err == nil {
 				t.Fatalf("expected error for %d response", tc.statusCode)
 			}
-			if !strings.Contains(err.Error(), strconv.Itoa(tc.statusCode)) {
-				t.Errorf("expected error to mention %d, got: %v", tc.statusCode, err)
+			// Verify the error is a BBError with the correct status code
+			var bbErr *errors.BBError
+			if !stderrors.As(err, &bbErr) {
+				t.Errorf("expected *errors.BBError, got %T: %v", err, err)
+			} else if bbErr.StatusCode != tc.statusCode {
+				t.Errorf("expected StatusCode %d, got %d", tc.statusCode, bbErr.StatusCode)
 			}
 		})
 	}
@@ -1010,24 +1040,43 @@ func TestClient_Delete_WithBody(t *testing.T) {
 
 // TestClient_TokenRefresh_WithOAuthConfig tests refresh token flow with OAuth config
 func TestClient_TokenRefresh_WithOAuthConfig(t *testing.T) {
-	var callCount int32
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		count := atomic.AddInt32(&callCount, 1)
+	var apiCallCount int32
+	var tokenCallCount int32
+
+	// Mock OAuth token endpoint for refresh.
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tokenCallCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"access_token":"refreshed-token","refresh_token":"new-refresh","expires_in":3600}`)
+	}))
+	defer tokenServer.Close()
+
+	origTokenURL := config.TokenURL
+	config.TokenURL = tokenServer.URL
+	defer func() { config.TokenURL = origTokenURL }()
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&apiCallCount, 1)
 
 		if count == 1 {
-			// First call: return 401 to trigger refresh
 			w.WriteHeader(401)
+			w.Write([]byte(`{"error":"Unauthorized"}`))
 			return
 		}
 
-		// Second call: should succeed
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer refreshed-token" {
+			t.Errorf("retry expected Authorization 'Bearer refreshed-token', got %q", auth)
+		}
 		w.WriteHeader(200)
 		w.Write([]byte(`{"ok":true}`))
 	}))
-	defer server.Close()
+	defer apiServer.Close()
 
-	client := NewClientWith(server.Client(), &config.Config{
+	client := NewClientWith(apiServer.Client(), &config.Config{
 		OAuthKey:    "test-key",
 		OAuthSecret: "test-secret",
 	}, &config.TokenData{
@@ -1035,21 +1084,16 @@ func TestClient_TokenRefresh_WithOAuthConfig(t *testing.T) {
 		RefreshToken: "test-refresh-token",
 	})
 
-	// This will attempt token refresh which will fail because
-	// auth.RefreshAccessToken will try to hit the real token endpoint
-	_, err := client.GetRaw(server.URL + "/test")
+	_, err := client.GetRaw(apiServer.URL + "/test")
+	if err != nil {
+		t.Fatalf("GetRaw() error: %v", err)
+	}
 
-	// We expect an error since we can't mock the actual refresh endpoint
-	if err == nil {
-		// Unlikely without proper mocking, but verify call count
-		if callCount < 1 {
-			t.Error("expected at least one API call")
-		}
-	} else {
-		// Expected: refresh will fail
-		if !strings.Contains(err.Error(), "session expired") && callCount != 1 {
-			t.Logf("Got expected error during refresh: %v", err)
-		}
+	if got := atomic.LoadInt32(&apiCallCount); got != 2 {
+		t.Errorf("expected 2 API calls, got %d", got)
+	}
+	if got := atomic.LoadInt32(&tokenCallCount); got != 1 {
+		t.Errorf("expected 1 token refresh call, got %d", got)
 	}
 }
 
@@ -1072,9 +1116,10 @@ func TestClient_TokenRefresh_NoOAuthConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for 401 without OAuth config")
 	}
-	// Should fail with OAuth credentials error
-	if !strings.Contains(err.Error(), "OAuth credentials") && !strings.Contains(err.Error(), "session expired") {
-		t.Logf("Got error (may be 401 or OAuth error): %v", err)
+	// Should fail with session expired or OAuth credentials error
+	errStr := err.Error()
+	if !strings.Contains(errStr, "OAuth credentials") && !strings.Contains(errStr, "session expired") {
+		t.Errorf("expected OAuth credentials or session expired error, got: %v", err)
 	}
 }
 

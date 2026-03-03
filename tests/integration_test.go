@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,8 +81,28 @@ func TestIntegration_AuthFlow_TokenRefresh(t *testing.T) {
 
 // TestIntegration_APIClient_WithTokenRefresh tests the API client with automatic token refresh.
 func TestIntegration_APIClient_WithTokenRefresh(t *testing.T) {
+	// Use a temporary config directory so that any token refresh writes do not
+	// pollute the real user configuration directory.
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
+
 	var apiCallCount int32
 	var tokenRefreshCount int32
+
+	// Mock OAuth token refresh server
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&tokenRefreshCount, 1)
+
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token":  "refreshed-token",
+			"refresh_token": "new-refresh",
+			"token_type":    "bearer",
+			"expires_in":    7200,
+		})
+	}))
+	defer tokenServer.Close()
 
 	// Mock Bitbucket API server
 	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,20 +129,6 @@ func TestIntegration_APIClient_WithTokenRefresh(t *testing.T) {
 	}))
 	defer apiServer.Close()
 
-	// Mock OAuth token refresh server
-	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&tokenRefreshCount, 1)
-
-		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"access_token":  "refreshed-token",
-			"refresh_token": "new-refresh",
-			"token_type":    "bearer",
-			"expires_in":    7200,
-		})
-	}))
-	defer tokenServer.Close()
-
 	orig := config.TokenURL
 	config.TokenURL = tokenServer.URL
 	defer func() { config.TokenURL = orig }()
@@ -135,39 +142,25 @@ func TestIntegration_APIClient_WithTokenRefresh(t *testing.T) {
 		RefreshToken: "old-refresh",
 	})
 
-	// This should trigger a 401, refresh the token, and retry successfully
-	// Note: The actual token refresh in doRequest requires config to have OAuth credentials,
-	// but we're testing the basic retry mechanism here
+	// This should trigger a 401, refresh the token, and retry successfully.
 	_, err := client.GetRaw(apiServer.URL + "/repos")
 	if err != nil {
-		// In the real implementation, this will fail because token refresh
-		// needs proper OAuth config. For integration test purposes, we verify
-		// the 401 is detected correctly.
-		if !strings.Contains(err.Error(), "401") {
-			t.Errorf("expected 401 error, got: %v", err)
-		}
+		t.Fatalf("GetRaw() error: %v", err)
+	}
+
+	if got := atomic.LoadInt32(&apiCallCount); got != 2 {
+		t.Errorf("apiCallCount = %d, want 2", got)
+	}
+	if got := atomic.LoadInt32(&tokenRefreshCount); got != 1 {
+		t.Errorf("tokenRefreshCount = %d, want 1", got)
 	}
 }
 
 // TestIntegration_Config_SaveAndLoad tests config persistence.
 func TestIntegration_Config_SaveAndLoad(t *testing.T) {
-	// Create a temporary config directory
-	tmpDir, err := os.MkdirTemp("", "bb-config-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Override the config directory
-	origConfigDir := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer func() {
-		if origConfigDir == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
-		} else {
-			os.Setenv("XDG_CONFIG_HOME", origConfigDir)
-		}
-	}()
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Save a config
 	cfg := &config.Config{
@@ -203,23 +196,9 @@ func TestIntegration_Config_SaveAndLoad(t *testing.T) {
 
 // TestIntegration_Token_SaveAndLoad tests token persistence.
 func TestIntegration_Token_SaveAndLoad(t *testing.T) {
-	// Create a temporary config directory
-	tmpDir, err := os.MkdirTemp("", "bb-token-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Override the config directory
-	origConfigDir := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer func() {
-		if origConfigDir == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
-		} else {
-			os.Setenv("XDG_CONFIG_HOME", origConfigDir)
-		}
-	}()
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Save a token
 	token := &config.TokenData{
@@ -363,19 +342,19 @@ func TestIntegration_APIClient_ErrorHandling(t *testing.T) {
 			name:           "404 Not Found",
 			statusCode:     404,
 			responseBody:   `{"error":"not_found"}`,
-			expectedErrMsg: "404",
+			expectedErrMsg: "Not found",
 		},
 		{
 			name:           "500 Internal Server Error",
 			statusCode:     500,
 			responseBody:   `{"error":"internal_error"}`,
-			expectedErrMsg: "500",
+			expectedErrMsg: "internal_error",
 		},
 		{
 			name:           "403 Forbidden",
 			statusCode:     403,
 			responseBody:   `{"error":"forbidden"}`,
-			expectedErrMsg: "403",
+			expectedErrMsg: "Permission denied",
 		},
 	}
 
@@ -455,21 +434,13 @@ func TestIntegration_JSONMarshaling(t *testing.T) {
 
 // TestIntegration_Config_FilePermissions tests that config files have secure permissions.
 func TestIntegration_Config_FilePermissions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "bb-perms-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping permission test on Windows (no POSIX permission bits)")
 	}
-	defer os.RemoveAll(tmpDir)
 
-	origConfigDir := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer func() {
-		if origConfigDir == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
-		} else {
-			os.Setenv("XDG_CONFIG_HOME", origConfigDir)
-		}
-	}()
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Save token (should have secure permissions)
 	token := &config.TokenData{
@@ -515,23 +486,9 @@ func TestIntegration_Config_FilePermissions(t *testing.T) {
 
 // TestIntegration_ConfigAndToken_Workflow tests the full config/token workflow.
 func TestIntegration_ConfigAndToken_Workflow(t *testing.T) {
-	// Create a temporary config directory
-	tmpDir, err := os.MkdirTemp("", "bb-workflow-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Override the config directory
-	origConfigDir := os.Getenv("XDG_CONFIG_HOME")
-	os.Setenv("XDG_CONFIG_HOME", tmpDir)
-	defer func() {
-		if origConfigDir == "" {
-			os.Unsetenv("XDG_CONFIG_HOME")
-		} else {
-			os.Setenv("XDG_CONFIG_HOME", origConfigDir)
-		}
-	}()
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("HOME", tmpDir)
 
 	// Step 1: Save OAuth config
 	cfg := &config.Config{
