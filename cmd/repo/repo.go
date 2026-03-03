@@ -82,19 +82,9 @@ func newCmdList() *cobra.Command {
 			}
 
 			path := fmt.Sprintf("/repositories/%s?pagelen=25&page=%d", url.PathEscape(workspace), page)
-			data, err := client.Get(path)
+			repos, err := api.GetPaginated[Repository](client, path)
 			if err != nil {
 				return err
-			}
-
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return errors.Wrap(err, "Failed to parse repository list response")
-			}
-
-			var repos []Repository
-			if err := json.Unmarshal(paginated.Values, &repos); err != nil {
-				return errors.Wrap(err, "Failed to parse repository data")
 			}
 
 			if jsonOut {
@@ -111,10 +101,6 @@ func newCmdList() *cobra.Command {
 				table.AddRow(r.Name, r.FullName, fmt.Sprintf("%v", r.IsPrivate), r.Language, mainBranch)
 			}
 			table.Print()
-
-			if paginated.Next != "" {
-				output.PrintMessage("\nMore results available. Use --page %d to see the next page.", page+1)
-			}
 			return nil
 		},
 	}
