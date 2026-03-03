@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
@@ -121,6 +122,7 @@ func newCmdList() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -163,11 +165,12 @@ func newCmdCreate() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&target, "target", "t", "", "Target commit hash (required)")
 	cmd.MarkFlagRequired("target")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdDelete() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "delete <workspace/repo-slug> <branch-name>",
 		Short: "Delete a branch",
 		Args:  cobra.ExactArgs(2),
@@ -184,7 +187,17 @@ func newCmdDelete() *cobra.Command {
 			output.PrintMessage("Branch '%s' deleted.", args[1])
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				return completion.BranchNamesWithDescriptions(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newCmdTags() *cobra.Command {
@@ -233,6 +246,7 @@ func newCmdTags() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -280,11 +294,12 @@ func newCmdTagCreate() *cobra.Command {
 	cmd.Flags().StringVarP(&target, "target", "t", "", "Target commit hash (required)")
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Tag message")
 	cmd.MarkFlagRequired("target")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdTagDelete() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "tag-delete <workspace/repo-slug> <tag-name>",
 		Short: "Delete a tag",
 		Args:  cobra.ExactArgs(2),
@@ -301,7 +316,9 @@ func newCmdTagDelete() *cobra.Command {
 			output.PrintMessage("Tag '%s' deleted.", args[1])
 			return nil
 		},
+		ValidArgsFunction: completion.RepositoryNamesWithDescriptions,
 	}
+	return cmd
 }
 
 func newCmdRestrictions() *cobra.Command {
@@ -346,5 +363,6 @@ func newCmdRestrictions() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }

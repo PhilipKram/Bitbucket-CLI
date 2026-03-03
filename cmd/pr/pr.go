@@ -10,6 +10,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/git"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
@@ -145,6 +146,7 @@ func newCmdList() *cobra.Command {
 	cmd.Flags().StringVarP(&state, "state", "s", "", "Filter by state (OPEN, MERGED, DECLINED, SUPERSEDED)")
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -209,6 +211,15 @@ func newCmdView() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
@@ -401,11 +412,20 @@ func newCmdMerge() *cobra.Command {
 	cmd.Flags().StringVar(&strategy, "strategy", "", "Merge strategy (merge_commit, squash, fast_forward)")
 	cmd.Flags().BoolVar(&closeBranch, "close-branch", true, "Close source branch after merge")
 	cmd.Flags().StringVarP(&message, "message", "m", "", "Merge commit message")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
 func newCmdApprove() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "approve <workspace/repo-slug> <pr-id>",
 		Short: "Approve a pull request",
 		Args:  cobra.ExactArgs(2),
@@ -422,11 +442,21 @@ func newCmdApprove() *cobra.Command {
 			output.PrintMessage("Pull request #%s approved.", args[1])
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newCmdUnapprove() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "unapprove <workspace/repo-slug> <pr-id>",
 		Short: "Remove approval from a pull request",
 		Args:  cobra.ExactArgs(2),
@@ -443,11 +473,21 @@ func newCmdUnapprove() *cobra.Command {
 			output.PrintMessage("Approval removed from PR #%s.", args[1])
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newCmdDecline() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "decline <workspace/repo-slug> <pr-id>",
 		Short: "Decline a pull request",
 		Args:  cobra.ExactArgs(2),
@@ -464,7 +504,17 @@ func newCmdDecline() *cobra.Command {
 			output.PrintMessage("Pull request #%s declined.", args[1])
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newCmdComments() *cobra.Command {
@@ -535,6 +585,15 @@ func newCmdComments() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
@@ -598,11 +657,20 @@ func newCmdComment() *cobra.Command {
 	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose comment")
 	cmd.Flags().StringVarP(&file, "file", "f", "", "File path in the diff for inline comment")
 	cmd.Flags().IntVarP(&line, "line", "l", 0, "Line number in the file for inline comment")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
 func newCmdDiff() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "diff <workspace/repo-slug> <pr-id>",
 		Short: "View pull request diff",
 		Args:  cobra.ExactArgs(2),
@@ -619,7 +687,17 @@ func newCmdDiff() *cobra.Command {
 			fmt.Println(string(data))
 			return nil
 		},
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if len(args) == 0 {
+				return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+			}
+			if len(args) == 1 {
+				return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+			}
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
+	return cmd
 }
 
 func newCmdActivity() *cobra.Command {
@@ -709,6 +787,15 @@ func newCmdActivity() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 
@@ -781,6 +868,15 @@ func newCmdEdit() *cobra.Command {
 	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose description")
 	cmd.Flags().StringVar(&destination, "destination", "", "New destination branch")
 	closeBranch = cmd.Flags().Bool("close-branch", false, "Close source branch after merge")
+	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
+		}
+		if len(args) == 1 {
+			return completion.PRNumbersWithDescriptions(cmd, args, toComplete)
+		}
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
 	return cmd
 }
 

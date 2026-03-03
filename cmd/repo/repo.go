@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
 	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
@@ -124,6 +125,7 @@ func newCmdList() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace slug")
+	cmd.RegisterFlagCompletionFunc("workspace", completion.WorkspaceNames)
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd
@@ -183,6 +185,7 @@ func newCmdView() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -237,6 +240,7 @@ func newCmdCreate() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "Workspace slug")
+	cmd.RegisterFlagCompletionFunc("workspace", completion.WorkspaceNames)
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Repository description")
 	cmd.Flags().BoolVar(&isPrivate, "private", true, "Make repository private")
 	cmd.Flags().StringVarP(&language, "language", "l", "", "Programming language")
@@ -263,6 +267,7 @@ func newCmdDelete() *cobra.Command {
 			output.PrintMessage("Repository '%s' deleted.", args[0])
 			return nil
 		},
+		ValidArgsFunction: completion.RepositoryNamesWithDescriptions,
 	}
 	return cmd
 }
@@ -305,6 +310,8 @@ func newCmdFork() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&newName, "name", "n", "", "Name for the forked repository")
 	cmd.Flags().StringVarP(&targetWorkspace, "target-workspace", "t", "", "Target workspace for the fork")
+	cmd.RegisterFlagCompletionFunc("target-workspace", completion.WorkspaceNames)
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -611,6 +618,7 @@ func newCmdCommits() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	cmd.Flags().StringVarP(&branch, "branch", "b", "", "Branch name")
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -632,6 +640,7 @@ func newCmdDiff() *cobra.Command {
 			fmt.Println(string(data))
 			return nil
 		},
+		ValidArgsFunction: completion.RepositoryNamesWithDescriptions,
 	}
 	return cmd
 }
