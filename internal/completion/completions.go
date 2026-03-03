@@ -218,3 +218,86 @@ func GetRepositoryByFullName(fullName string) (*Repository, error) {
 
 	return &repo, nil
 }
+
+// Branch represents a Bitbucket branch for completion purposes
+type Branch struct {
+	Name string `json:"name"`
+}
+
+// BranchNames returns a completion function that suggests branch names
+func BranchNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Expect repository full name (workspace/repo-slug) as first argument
+	if len(args) < 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(args[0]))
+	branches, err := api.GetPaginated[Branch](client, path)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var suggestions []string
+	for _, b := range branches {
+		suggestions = append(suggestions, b.Name)
+	}
+
+	return suggestions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// BranchNamesWithDescriptions returns a completion function that suggests branch names with descriptions
+func BranchNamesWithDescriptions(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	// Expect repository full name (workspace/repo-slug) as first argument
+	if len(args) < 1 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(args[0]))
+	branches, err := api.GetPaginated[Branch](client, path)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	var suggestions []string
+	for _, b := range branches {
+		// Format: name\tdescription for shells that support descriptions
+		suggestions = append(suggestions, b.Name+"\tBranch")
+	}
+
+	return suggestions, cobra.ShellCompDirectiveNoFileComp
+}
+
+// GetBranchNames retrieves all branch names for a specific repository
+func GetBranchNames(repoFullName string) ([]string, error) {
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, err
+	}
+
+	if repoFullName == "" {
+		return []string{}, nil
+	}
+
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(repoFullName))
+	branches, err := api.GetPaginated[Branch](client, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var names []string
+	for _, b := range branches {
+		names = append(names, b.Name)
+	}
+
+	return names, nil
+}
