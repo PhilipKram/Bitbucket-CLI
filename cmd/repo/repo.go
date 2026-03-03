@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"os/exec"
 
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/config"
 	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
@@ -294,9 +297,9 @@ func newCmdClone() *cobra.Command {
 	var protocol string
 
 	cmd := &cobra.Command{
-		Use:   "clone <workspace/repo-slug>",
+		Use:   "clone <workspace/repo-slug> [directory]",
 		Short: "Clone a repository",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client, err := api.NewClient()
 			if err != nil {
@@ -328,9 +331,43 @@ func newCmdClone() *cobra.Command {
 				return errors.InvalidInput("protocol", fmt.Sprintf("no clone URL found for protocol '%s'", protocol))
 			}
 
-			// For now, just print a message that clone functionality will be implemented
-			output.PrintMessage("Clone functionality will be implemented for: %s", repo.FullName)
-			output.PrintMessage("Clone URL (%s): %s", protocol, cloneURL)
+			// For HTTPS protocol, inject OAuth token into the URL
+			if protocol == "https" {
+				// Parse the URL to inject the token
+				// Original: https://bitbucket.org/workspace/repo.git
+				// With token: https://x-token-auth:{token}@bitbucket.org/workspace/repo.git
+				if len(cloneURL) > 8 && cloneURL[:8] == "https://" {
+					tokenData, err := config.LoadToken()
+					if err != nil {
+						return fmt.Errorf("failed to load authentication token: %w", err)
+					}
+					cloneURL = fmt.Sprintf("https://x-token-auth:%s@%s", tokenData.AccessToken, cloneURL[8:])
+				}
+			}
+
+			// Determine target directory
+			targetDir := ""
+			if len(args) == 2 {
+				targetDir = args[1]
+			}
+
+			// Execute git clone
+			output.PrintMessage("Cloning %s...", repo.FullName)
+			var gitCmd *exec.Cmd
+			if targetDir != "" {
+				gitCmd = exec.Command("git", "clone", cloneURL, targetDir)
+			} else {
+				gitCmd = exec.Command("git", "clone", cloneURL)
+			}
+
+			gitCmd.Stdout = os.Stdout
+			gitCmd.Stderr = os.Stderr
+
+			if err := gitCmd.Run(); err != nil {
+				return fmt.Errorf("git clone failed: %w", err)
+			}
+
+			output.PrintMessage("Repository cloned successfully.")
 			return nil
 		},
 	}
