@@ -13,6 +13,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -142,6 +143,7 @@ func newCmdList() *cobra.Command {
 	}
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -192,6 +194,7 @@ func newCmdView() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -255,11 +258,12 @@ func newCmdTrigger() *cobra.Command {
 	cmd.Flags().BoolVar(&customPipe, "custom", false, "Trigger a custom pipeline")
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Watch pipeline after triggering")
 	cmd.Flags().IntVarP(&interval, "interval", "i", 5, "Polling interval in seconds (when watching)")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdStop() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "stop <workspace/repo-slug> <pipeline-uuid>",
 		Short: "Stop a running pipeline",
 		Args:  cobra.ExactArgs(2),
@@ -277,6 +281,8 @@ func newCmdStop() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
+	return cmd
 }
 
 func newCmdSteps() *cobra.Command {
@@ -329,11 +335,12 @@ func newCmdSteps() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdLog() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "log <workspace/repo-slug> <pipeline-uuid> <step-uuid>",
 		Short: "View logs for a pipeline step",
 		Args:  cobra.ExactArgs(3),
@@ -352,6 +359,8 @@ func newCmdLog() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
+	return cmd
 }
 
 // watchPipeline polls a pipeline and displays its status in real-time
@@ -573,5 +582,6 @@ func newCmdWatch() *cobra.Command {
 	cmd.Flags().IntVarP(&buildNumber, "build", "b", 0, "Build number to watch (0 = latest)")
 	cmd.Flags().IntVarP(&interval, "interval", "i", 5, "Polling interval in seconds")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
