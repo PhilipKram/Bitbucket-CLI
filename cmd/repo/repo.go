@@ -55,6 +55,7 @@ func NewCmdRepo() *cobra.Command {
 	cmd.AddCommand(newCmdCreate())
 	cmd.AddCommand(newCmdDelete())
 	cmd.AddCommand(newCmdFork())
+	cmd.AddCommand(newCmdClone())
 	cmd.AddCommand(newCmdCommits())
 	cmd.AddCommand(newCmdDiff())
 
@@ -286,6 +287,43 @@ func newCmdFork() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&newName, "name", "n", "", "Name for the forked repository")
 	cmd.Flags().StringVarP(&targetWorkspace, "target-workspace", "t", "", "Target workspace for the fork")
+	return cmd
+}
+
+func newCmdClone() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "clone <workspace/repo-slug>",
+		Short: "Clone a repository",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client, err := api.NewClient()
+			if err != nil {
+				return err
+			}
+
+			// Fetch repository details to get clone URL
+			path := fmt.Sprintf("/repositories/%s", args[0])
+			data, err := client.Get(path)
+			if err != nil {
+				return err
+			}
+
+			var repo Repository
+			if err := json.Unmarshal(data, &repo); err != nil {
+				return errors.Wrap(err, "Failed to parse repository details")
+			}
+
+			// For now, just print a message that clone functionality will be implemented
+			output.PrintMessage("Clone functionality will be implemented for: %s", repo.FullName)
+			if len(repo.Links.Clone) > 0 {
+				output.PrintMessage("Available clone URLs:")
+				for _, c := range repo.Links.Clone {
+					output.PrintMessage("  %s: %s", c.Name, c.Href)
+				}
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 
