@@ -81,9 +81,19 @@ func newCmdList() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=25&page=%d", args[0], page)
-			branches, err := api.GetPaginated[Branch](client, path)
+			data, err := client.Get(path)
 			if err != nil {
 				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return errors.Wrap(err, "Failed to parse API response")
+			}
+
+			var branches []Branch
+			if err := json.Unmarshal(paginated.Values, &branches); err != nil {
+				return errors.Wrap(err, "Failed to parse branches data")
 			}
 
 			if jsonOut {

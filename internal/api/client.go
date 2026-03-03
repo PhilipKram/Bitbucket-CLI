@@ -56,41 +56,10 @@ func NewClient() (*Client, error) {
 		}
 	}
 
-	// Configure HTTP transport with connection pooling
-	maxIdleConns := 100
-	if envMaxIdle := os.Getenv("BB_HTTP_MAX_IDLE_CONNS"); envMaxIdle != "" {
-		if val, err := strconv.Atoi(envMaxIdle); err == nil && val > 0 {
-			maxIdleConns = val
-		}
-	}
-
-	maxIdleConnsPerHost := 10
-	if envMaxIdlePerHost := os.Getenv("BB_HTTP_MAX_IDLE_CONNS_PER_HOST"); envMaxIdlePerHost != "" {
-		if val, err := strconv.Atoi(envMaxIdlePerHost); err == nil && val > 0 {
-			maxIdleConnsPerHost = val
-		}
-	}
-
-	idleConnTimeout := 90 * time.Second
-	if envIdleTimeout := os.Getenv("BB_HTTP_IDLE_CONN_TIMEOUT"); envIdleTimeout != "" {
-		if secs, err := strconv.Atoi(envIdleTimeout); err == nil && secs > 0 {
-			idleConnTimeout = time.Duration(secs) * time.Second
-		}
-	}
-
-	transport := &http.Transport{
-		MaxIdleConns:        maxIdleConns,
-		MaxIdleConnsPerHost: maxIdleConnsPerHost,
-		IdleConnTimeout:     idleConnTimeout,
-	}
-
 	return &Client{
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
-		token: token,
-		cfg:   cfg,
+		httpClient: &http.Client{Timeout: timeout},
+		token:      token,
+		cfg:        cfg,
 	}, nil
 }
 
@@ -114,24 +83,17 @@ func (c *Client) setAuth(req *http.Request) {
 }
 
 func (c *Client) doRequest(method, urlStr string, body io.Reader, contentType string) (*http.Response, error) {
-	// Only buffer the body if we have a refresh token (for potential 401 retry) and body is non-nil
+	// Buffer the body so it can be replayed on 401 retry.
 	var bodyBytes []byte
-	var bodyReader io.Reader
-
-	if c.token.RefreshToken != "" && body != nil {
-		// Buffer the body so it can be replayed on 401 retry
+	if body != nil {
 		var err error
 		bodyBytes, err = io.ReadAll(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read request body: %w", err)
 		}
-		bodyReader = bytes.NewReader(bodyBytes)
-	} else {
-		// No retry possible or no body, use directly
-		bodyReader = body
 	}
 
-	req, err := http.NewRequest(method, urlStr, bodyReader)
+	req, err := http.NewRequest(method, urlStr, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -263,57 +225,6 @@ func (c *Client) Delete(path string) ([]byte, error) {
 		return nil, nil
 	}
 	return handleResponse(resp)
-}
-
-// GetPaginated fetches a single page of paginated results from the Bitbucket API
-// and decodes them directly into a slice of T using a streaming JSON decoder.
-//
-// Memory Optimization:
-// This function uses a streaming decoder to avoid the triple-allocation pattern that
-// occurs with the traditional approach:
-//   1. io.ReadAll() allocates []byte for the entire response body
-//   2. json.Unmarshal() into PaginatedResponse allocates json.RawMessage for Values field
-//   3. json.Unmarshal() again into []T allocates the final slice
-//
-// With streaming, we decode directly from the HTTP response body into the target type,
-// eliminating two intermediate allocations. For paginated responses containing 25-50
-// items (typical size: 50-200KB), this reduces memory usage by ~2x and decreases GC
-// pressure, especially important for commands that may process multiple pages.
-//
-// Implementation:
-// We use an anonymous struct to extract only the "values" field from the paginated
-// response envelope, ignoring pagination metadata (page, size, next, etc.). The
-// json.Decoder reads directly from resp.Body without buffering the entire response.
-func GetPaginated[T any](c *Client, path string) ([]T, error) {
-	u := config.BitbucketAPI + path
-	resp, err := c.doRequest("GET", u, nil, "")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read error response: %w", err)
-		}
-		return nil, errors.ParseAPIError(resp, body)
-	}
-
-	// Streaming decoder pattern: decode directly from HTTP response body into target type.
-	// This anonymous struct tells the decoder to extract only the "values" array field,
-	// skipping pagination metadata, and decode it directly into []T without intermediate
-	// allocations for []byte or json.RawMessage.
-	var result struct {
-		Values []T `json:"values"`
-	}
-
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode paginated response: %w", err)
-	}
-
-	return result.Values, nil
 }
 
 func handleResponse(resp *http.Response) ([]byte, error) {

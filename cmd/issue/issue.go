@@ -84,9 +84,20 @@ func newCmdList() *cobra.Command {
 			if state != "" {
 				path += fmt.Sprintf("&q=state%%3D%%22%s%%22", url.QueryEscape(state))
 			}
-			issues, err := api.GetPaginated[Issue](client, path)
+
+			data, err := client.Get(path)
 			if err != nil {
 				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return errors.Wrap(err, "Failed to parse API response")
+			}
+
+			var issues []Issue
+			if err := json.Unmarshal(paginated.Values, &issues); err != nil {
+				return errors.Wrap(err, "Failed to parse issues data")
 			}
 
 			if jsonOut {

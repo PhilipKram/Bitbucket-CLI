@@ -91,8 +91,18 @@ func newCmdList() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/repositories/%s/pipelines/?pagelen=20&page=%d&sort=-created_on", args[0], page)
-			pipelines, err := api.GetPaginated[Pipeline](client, path)
+			data, err := client.Get(path)
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var pipelines []Pipeline
+			if err := json.Unmarshal(paginated.Values, &pipelines); err != nil {
 				return err
 			}
 

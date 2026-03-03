@@ -60,8 +60,18 @@ func newCmdList() *cobra.Command {
 			}
 			path += "?pagelen=25"
 
-			snippets, err := api.GetPaginated[Snippet](client, path)
+			data, err := client.Get(path)
 			if err != nil {
+				return err
+			}
+
+			var paginated api.PaginatedResponse
+			if err := json.Unmarshal(data, &paginated); err != nil {
+				return err
+			}
+
+			var snippets []Snippet
+			if err := json.Unmarshal(paginated.Values, &snippets); err != nil {
 				return err
 			}
 
