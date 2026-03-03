@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/config"
@@ -111,11 +112,320 @@ func TestCallbackHandler_HTMLEscaping(t *testing.T) {
 	}
 }
 
-func TestOpenBrowser(t *testing.T) {
-	// Just verify the function doesn't panic.
-	// On CI without a display, it may fail but should not panic.
-	err := openBrowser("https://example.com")
-	// We don't check the error because the test environment may not have
-	// a browser/display available. We just verify it doesn't panic.
-	_ = err
+// TestOpenBrowser tests are skipped to avoid launching real browser processes
+// in CI/developer environments. To properly test openBrowser, refactor it to
+// accept an injectable command runner.
+
+func TestExchangeCode_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			t.Error("expected basic auth")
+		}
+		if user != "test-client-id" || pass != "test-client-secret" {
+			t.Errorf("unexpected credentials: user=%q pass=%q", user, pass)
+		}
+
+		r.ParseForm()
+		if r.FormValue("grant_type") != "authorization_code" {
+			t.Errorf("expected grant_type=authorization_code, got %s", r.FormValue("grant_type"))
+		}
+		if r.FormValue("code") != "test-auth-code" {
+			t.Errorf("expected code=test-auth-code, got %s", r.FormValue("code"))
+		}
+
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token":  "new-access-token",
+			"refresh_token": "new-refresh-token",
+			"token_type":    "bearer",
+			"expires_in":    3600,
+		})
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	token, err := exchangeCode("test-client-id", "test-client-secret", "test-auth-code", "http://localhost:8817/callback")
+	if err != nil {
+		t.Fatalf("exchangeCode() error: %v", err)
+	}
+
+	if token.AccessToken != "new-access-token" {
+		t.Errorf("AccessToken = %q, want %q", token.AccessToken, "new-access-token")
+	}
+	if token.RefreshToken != "new-refresh-token" {
+		t.Errorf("RefreshToken = %q, want %q", token.RefreshToken, "new-refresh-token")
+	}
+}
+
+func TestExchangeCode_HTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(401)
+		w.Write([]byte(`{"error":"invalid_client"}`))
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("bad-client", "bad-secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for 401 response")
+	}
+	if !strings.Contains(err.Error(), "HTTP 401") {
+		t.Errorf("expected HTTP 401 in error, got: %v", err)
+	}
+}
+
+func TestExchangeCode_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte(`invalid json`))
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+	if !strings.Contains(err.Error(), "Failed to parse token response") {
+		t.Errorf("expected parse error in message, got: %v", err)
+	}
+}
+
+func TestRefreshAccessToken_NetworkError(t *testing.T) {
+	// Use a closed server for a fast, deterministic connection error
+	server := httptest.NewServer(http.NewServeMux())
+	closedURL := server.URL
+	server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = closedURL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := RefreshAccessToken("client", "secret", "refresh")
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+}
+
+func TestExchangeCode_NetworkError(t *testing.T) {
+	// Use a closed server for a fast, deterministic connection error
+	server := httptest.NewServer(http.NewServeMux())
+	closedURL := server.URL
+	server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = closedURL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for network failure")
+	}
+}
+
+
+func TestExchangeCode_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		// Empty response body
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err == nil {
+		t.Fatal("expected error for empty response")
+	}
+}
+
+func TestRefreshAccessToken_EmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		// Empty response body
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	_, err := RefreshAccessToken("client", "secret", "refresh")
+	if err == nil {
+		t.Fatal("expected error for empty response")
+	}
+}
+
+func TestExchangeCode_MissingFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		// Response with missing fields
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "token-only",
+		})
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	// Should still succeed - Go will use zero values for missing fields
+	token, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+	if err != nil {
+		t.Fatalf("exchangeCode() error: %v", err)
+	}
+	if token.AccessToken != "token-only" {
+		t.Errorf("AccessToken = %q, want %q", token.AccessToken, "token-only")
+	}
+	// RefreshToken should be empty string
+	if token.RefreshToken != "" {
+		t.Errorf("RefreshToken = %q, want empty string", token.RefreshToken)
+	}
+}
+
+func TestRefreshAccessToken_MissingFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		// Response with missing fields
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"access_token": "new-token-only",
+		})
+	}))
+	defer server.Close()
+
+	orig := config.TokenURL
+	config.TokenURL = server.URL
+	defer func() { config.TokenURL = orig }()
+
+	// Should still succeed - Go will use zero values for missing fields
+	token, err := RefreshAccessToken("client", "secret", "refresh")
+	if err != nil {
+		t.Fatalf("RefreshAccessToken() error: %v", err)
+	}
+	if token.AccessToken != "new-token-only" {
+		t.Errorf("AccessToken = %q, want %q", token.AccessToken, "new-token-only")
+	}
+}
+
+func TestExchangeCode_VariousHTTPErrors(t *testing.T) {
+	testCases := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantError  string
+	}{
+		{
+			name:       "Unauthorized",
+			statusCode: 401,
+			body:       `{"error":"unauthorized"}`,
+			wantError:  "HTTP 401",
+		},
+		{
+			name:       "Forbidden",
+			statusCode: 403,
+			body:       `{"error":"forbidden"}`,
+			wantError:  "HTTP 403",
+		},
+		{
+			name:       "Internal Server Error",
+			statusCode: 500,
+			body:       `{"error":"internal_error"}`,
+			wantError:  "HTTP 500",
+		},
+		{
+			name:       "Bad Gateway",
+			statusCode: 502,
+			body:       `{"error":"bad_gateway"}`,
+			wantError:  "HTTP 502",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+				w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			orig := config.TokenURL
+			config.TokenURL = server.URL
+			defer func() { config.TokenURL = orig }()
+
+			_, err := exchangeCode("client", "secret", "code", "http://localhost:8817/callback")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Errorf("expected %q in error, got: %v", tc.wantError, err)
+			}
+		})
+	}
+}
+
+func TestRefreshAccessToken_VariousHTTPErrors(t *testing.T) {
+	testCases := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantError  string
+	}{
+		{
+			name:       "Unauthorized",
+			statusCode: 401,
+			body:       `{"error":"invalid_token"}`,
+			wantError:  "HTTP 401",
+		},
+		{
+			name:       "Bad Request",
+			statusCode: 400,
+			body:       `{"error":"invalid_grant"}`,
+			wantError:  "HTTP 400",
+		},
+		{
+			name:       "Service Unavailable",
+			statusCode: 503,
+			body:       `{"error":"service_unavailable"}`,
+			wantError:  "HTTP 503",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.statusCode)
+				w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			orig := config.TokenURL
+			config.TokenURL = server.URL
+			defer func() { config.TokenURL = orig }()
+
+			_, err := RefreshAccessToken("client", "secret", "refresh")
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Errorf("expected %q in error, got: %v", tc.wantError, err)
+			}
+		})
+	}
 }
