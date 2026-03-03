@@ -171,7 +171,9 @@ func (c *Client) GetRaw(rawURL string) ([]byte, error) {
 	return handleResponse(resp)
 }
 
-// Post performs a POST with JSON body.
+// Post performs a POST request. If jsonBody is non-empty, it is sent as a JSON
+// body with Content-Type "application/json"; otherwise, no request body or
+// Content-Type header is sent.
 func (c *Client) Post(path string, jsonBody string) ([]byte, error) {
 	u := config.BitbucketAPI + path
 	var body io.Reader
