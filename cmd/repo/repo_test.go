@@ -17,6 +17,7 @@ func TestNewCmdRepo_HasSubcommands(t *testing.T) {
 		"fork":    false,
 		"commits": false,
 		"diff":    false,
+		"clone":   false,
 	}
 
 	for _, sub := range subcommands {
@@ -208,6 +209,51 @@ func TestNewCmdCommits_DefaultPageValue(t *testing.T) {
 	}
 	if pageFlag.DefValue != "1" {
 		t.Errorf("page flag default = %q, want %q", pageFlag.DefValue, "1")
+	}
+}
+
+func TestNewCmdClone_HasExpectedFlags(t *testing.T) {
+	cmd := NewCmdRepo()
+	cloneCmd, _, err := cmd.Find([]string{"clone"})
+	if err != nil {
+		t.Fatalf("failed to find clone command: %v", err)
+	}
+
+	if cloneCmd.Flags().Lookup("protocol") == nil {
+		t.Error("expected flag --protocol not found on clone command")
+	}
+}
+
+func TestNewCmdClone_DefaultProtocolValue(t *testing.T) {
+	cmd := NewCmdRepo()
+	cloneCmd, _, err := cmd.Find([]string{"clone"})
+	if err != nil {
+		t.Fatalf("failed to find clone command: %v", err)
+	}
+
+	protocolFlag := cloneCmd.Flags().Lookup("protocol")
+	if protocolFlag == nil {
+		t.Fatal("protocol flag not found")
+	}
+	if protocolFlag.DefValue != "https" {
+		t.Errorf("protocol flag default = %q, want %q", protocolFlag.DefValue, "https")
+	}
+}
+
+func TestNewCmdClone_ProtocolShortFlag(t *testing.T) {
+	cmd := NewCmdRepo()
+	cloneCmd, _, err := cmd.Find([]string{"clone"})
+	if err != nil {
+		t.Fatalf("failed to find clone command: %v", err)
+	}
+
+	// Test short flag for protocol
+	pFlag := cloneCmd.Flags().ShorthandLookup("p")
+	if pFlag == nil {
+		t.Error("expected short flag -p not found on clone command")
+	}
+	if pFlag.Name != "protocol" {
+		t.Errorf("short flag -p maps to %q, want %q", pFlag.Name, "protocol")
 	}
 }
 
@@ -417,9 +463,9 @@ func TestNewCmdRepo_CommandStructure(t *testing.T) {
 		t.Errorf("Short = %q, want %q", cmd.Short, "Manage repositories")
 	}
 
-	// Should have 7 subcommands
-	if len(cmd.Commands()) != 7 {
-		t.Errorf("expected 7 subcommands, got %d", len(cmd.Commands()))
+	// Should have 8 subcommands
+	if len(cmd.Commands()) != 8 {
+		t.Errorf("expected 8 subcommands, got %d", len(cmd.Commands()))
 	}
 }
 
