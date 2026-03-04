@@ -155,7 +155,49 @@ bb auth logout       # Remove stored credentials
 | `bb workspace`| Manage workspaces and projects     |
 | `bb user`     | Manage user account and settings   |
 | `bb config`   | Manage CLI configuration           |
+| `bb mcp`      | Model Context Protocol server      |
 | `bb upgrade`  | Self-update to the latest version  |
+
+## MCP (Model Context Protocol)
+
+`bb` supports the Model Context Protocol, allowing AI agents and LLM-powered development tools to interact with Bitbucket through `bb` as a tool provider.
+
+### Start the MCP server
+
+```sh
+bb mcp serve
+```
+
+### Configure your AI client
+
+**Claude Desktop** - Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "bitbucket": {
+      "command": "bb",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### What you can do
+
+Once configured, AI agents can:
+
+- Create and manage pull requests
+- Trigger and monitor CI/CD pipelines
+- Create and list issues
+- All using natural language!
+
+**Example interactions:**
+- "Create a pull request in myworkspace/myrepo from feature-branch to main"
+- "Show me recent pipeline runs"
+- "List all open pull requests"
+
+For full documentation, configuration examples, and available tools, see [docs/mcp.md](docs/mcp.md).
 
 ### Pull requests
 
