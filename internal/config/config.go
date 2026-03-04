@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -15,6 +16,20 @@ const (
 
 // TokenURL is a variable so it can be overridden in tests.
 var TokenURL = "https://bitbucket.org/site/oauth2/access_token"
+
+var (
+	configMu  sync.RWMutex
+	cachedDir string
+)
+
+// ResetConfigDirCache resets the cached config directory. This is used in tests
+// to ensure each test gets its own config directory based on its temp HOME.
+// Exported so tests in other packages can reset the cache when needed.
+func ResetConfigDirCache() {
+	configMu.Lock()
+	defer configMu.Unlock()
+	cachedDir = ""
+}
 
 type Config struct {
 	DefaultWorkspace string `json:"default_workspace"`
@@ -33,6 +48,24 @@ type TokenData struct {
 }
 
 func ConfigDir() (string, error) {
+	// Fast path: return cached result if available
+	configMu.RLock()
+	if cachedDir != "" {
+		dir := cachedDir
+		configMu.RUnlock()
+		return dir, nil
+	}
+	configMu.RUnlock()
+
+	// Slow path: compute and cache on success only
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if cachedDir != "" {
+		return cachedDir, nil
+	}
+
 	var base string
 	// Check XDG_CONFIG_HOME first (for Linux and tests)
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
@@ -49,7 +82,8 @@ func ConfigDir() (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
-	return dir, nil
+	cachedDir = dir
+	return cachedDir, nil
 }
 
 func LoadConfig() (*Config, error) {

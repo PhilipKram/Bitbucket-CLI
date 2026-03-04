@@ -86,6 +86,7 @@ func TestIntegration_APIClient_WithTokenRefresh(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
 
 	var apiCallCount int32
 	var tokenRefreshCount int32
@@ -161,6 +162,7 @@ func TestIntegration_Config_SaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
 
 	// Save a config
 	cfg := &config.Config{
@@ -199,6 +201,7 @@ func TestIntegration_Token_SaveAndLoad(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
 
 	// Save a token
 	token := &config.TokenData{
@@ -441,6 +444,7 @@ func TestIntegration_Config_FilePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
 
 	// Save token (should have secure permissions)
 	token := &config.TokenData{
@@ -489,6 +493,7 @@ func TestIntegration_ConfigAndToken_Workflow(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
 
 	// Step 1: Save OAuth config
 	cfg := &config.Config{

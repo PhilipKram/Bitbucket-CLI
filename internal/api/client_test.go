@@ -701,6 +701,7 @@ func TestClient_TokenRefresh_Unauthorized(t *testing.T) {
 	// Ensure token persistence during refresh writes to an isolated temp directory.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	config.ResetConfigDirCache()
 
 	var apiCallCount int32
 	var tokenCallCount int32
@@ -1102,6 +1103,7 @@ func TestClient_Delete_WithBody(t *testing.T) {
 func TestClient_TokenRefresh_WithOAuthConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	config.ResetConfigDirCache()
 
 	var apiCallCount int32
 	var tokenCallCount int32

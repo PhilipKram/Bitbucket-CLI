@@ -22,6 +22,9 @@ func setTempHome(t *testing.T, tmpDir string) {
 	if runtime.GOOS == "windows" {
 		t.Setenv("USERPROFILE", tmpDir)
 	}
+	// Reset config cache after changing environment variables so ConfigDir()
+	// recomputes the path for this test's temp directory
+	config.ResetConfigDirCache()
 }
 
 func TestCheckForUpdate_DevVersion(t *testing.T) {
