@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
 
@@ -131,6 +132,7 @@ func newCmdView() *cobra.Command {
 			output.PrintMessage("URL:     %s", ws.Links.HTML.Href)
 			return nil
 		},
+		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	return cmd
 }
@@ -175,6 +177,7 @@ func newCmdMembers() *cobra.Command {
 			table.Print()
 			return nil
 		},
+		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd
@@ -220,6 +223,7 @@ func newCmdProjects() *cobra.Command {
 			table.Print()
 			return nil
 		},
+		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd
@@ -258,6 +262,7 @@ func newCmdProjectCreate() *cobra.Command {
 			output.PrintMessage("Project '%s' created: %s", project.Name, project.Links.HTML.Href)
 			return nil
 		},
+		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Project description")
 	cmd.Flags().BoolVar(&isPrivate, "private", true, "Make project private")
@@ -294,6 +299,7 @@ func newCmdPermissions() *cobra.Command {
 			output.PrintJSON(raw)
 			return nil
 		},
+		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
 	return cmd

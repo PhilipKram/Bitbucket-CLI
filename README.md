@@ -32,6 +32,71 @@ go install github.com/PhilipKram/bitbucket-cli@latest
 
 Download pre-built binaries for macOS, Linux, and Windows from the [Releases](https://github.com/PhilipKram/Bitbucket-CLI/releases) page.
 
+## Shell Completion
+
+`bb` supports shell completion for Bash, Zsh, Fish, and PowerShell. Completions include command names, flags, and dynamic suggestions for workspaces, repositories, branches, and pull requests.
+
+### Bash
+
+#### Current session
+```sh
+source <(bb completion bash)
+```
+
+#### Permanent installation
+```sh
+# Linux:
+bb completion bash > /etc/bash_completion.d/bb
+
+# macOS (with bash-completion@2 from Homebrew):
+bb completion bash > $(brew --prefix)/etc/bash_completion.d/bb
+```
+
+### Zsh
+
+#### Current session
+```sh
+source <(bb completion zsh)
+```
+
+#### Permanent installation
+```sh
+bb completion zsh > "${fpath[1]}/_bb"
+```
+
+Then start a new shell session.
+
+### Fish
+
+#### Current session
+```sh
+bb completion fish | source
+```
+
+#### Permanent installation
+```sh
+bb completion fish > ~/.config/fish/completions/bb.fish
+```
+
+### PowerShell
+
+#### Current session
+```powershell
+bb completion powershell | Out-String | Invoke-Expression
+```
+
+#### Permanent installation
+```powershell
+# Add to your PowerShell profile:
+bb completion powershell >> $PROFILE
+```
+
+Or save to a file and source it from your profile:
+```powershell
+bb completion powershell > bb.ps1
+# Then add ". /path/to/bb.ps1" to your $PROFILE
+```
+
 ## Authentication
 
 `bb` uses OAuth 2.0 for authentication. You'll need an OAuth consumer from Bitbucket.

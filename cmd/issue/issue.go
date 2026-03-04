@@ -9,6 +9,7 @@ import (
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/PhilipKram/bitbucket-cli/internal/cmdutil"
+	"github.com/PhilipKram/bitbucket-cli/internal/completion"
 	"github.com/PhilipKram/bitbucket-cli/internal/errors"
 	"github.com/PhilipKram/bitbucket-cli/internal/output"
 )
@@ -127,6 +128,7 @@ func newCmdList() *cobra.Command {
 	cmd.Flags().StringVarP(&state, "state", "s", "", "Filter by state (new, open, resolved, on hold, invalid, duplicate, wontfix, closed)")
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -188,6 +190,7 @@ func newCmdView() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -237,6 +240,7 @@ func newCmdCreate() *cobra.Command {
 	cmd.Flags().StringVarP(&kind, "kind", "k", "bug", "Issue kind (bug, enhancement, proposal, task)")
 	cmd.Flags().StringVar(&priority, "priority", "major", "Priority (trivial, minor, major, critical, blocker)")
 	cmd.MarkFlagRequired("title")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -283,11 +287,12 @@ func newCmdEdit() *cobra.Command {
 	cmd.Flags().StringVarP(&state, "state", "s", "", "New state")
 	cmd.Flags().StringVar(&priority, "priority", "", "New priority")
 	cmd.Flags().StringVarP(&kind, "kind", "k", "", "New kind")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdDelete() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "delete <workspace/repo-slug> <issue-id>",
 		Short: "Delete an issue",
 		Args:  cobra.ExactArgs(2),
@@ -305,6 +310,8 @@ func newCmdDelete() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
+	return cmd
 }
 
 func newCmdComments() *cobra.Command {
@@ -357,6 +364,7 @@ func newCmdComments() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
@@ -404,11 +412,12 @@ func newCmdComment() *cobra.Command {
 	cmd.Flags().StringVarP(&body, "body", "b", "", "Comment body")
 	cmd.Flags().StringVarP(&bodyFile, "body-file", "F", "", "Read body from file (use - for stdin)")
 	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose comment")
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
 
 func newCmdVote() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "vote <workspace/repo-slug> <issue-id>",
 		Short: "Vote on an issue",
 		Args:  cobra.ExactArgs(2),
@@ -426,10 +435,12 @@ func newCmdVote() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
+	return cmd
 }
 
 func newCmdWatch() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "watch <workspace/repo-slug> <issue-id>",
 		Short: "Watch an issue",
 		Args:  cobra.ExactArgs(2),
@@ -447,4 +458,6 @@ func newCmdWatch() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
+	return cmd
 }
