@@ -696,6 +696,147 @@ func TestPRTools_RegistryIntegration(t *testing.T) {
 	}
 }
 
+// TestToolSchemas validates that all tool definitions have proper JSON schemas.
+func TestToolSchemas(t *testing.T) {
+	// Define all tools that should be validated
+	tools := []struct {
+		name     string
+		tool     Tool
+		required []string
+	}{
+		{
+			name:     "pr_list",
+			tool:     NewPRListTool(),
+			required: []string{"repository"},
+		},
+		{
+			name:     "pr_view",
+			tool:     NewPRViewTool(),
+			required: []string{"repository", "pr_id"},
+		},
+		{
+			name:     "pr_create",
+			tool:     NewPRCreateTool(),
+			required: []string{"repository", "title", "source"},
+		},
+		{
+			name:     "issue_list",
+			tool:     NewIssueListTool(),
+			required: []string{"repository"},
+		},
+		{
+			name:     "issue_create",
+			tool:     NewIssueCreateTool(),
+			required: []string{"repository", "title"},
+		},
+		{
+			name:     "pipeline_list",
+			tool:     NewPipelineListTool(),
+			required: []string{"repository"},
+		},
+		{
+			name:     "pipeline_trigger",
+			tool:     NewPipelineTriggerTool(),
+			required: []string{"repository"},
+		},
+	}
+
+	for _, tc := range tools {
+		t.Run(tc.name, func(t *testing.T) {
+			// Verify tool has a name
+			if tc.tool.Name == "" {
+				t.Error("tool name is empty")
+			}
+
+			// Verify tool has a description
+			if tc.tool.Description == "" {
+				t.Error("tool description is empty")
+			}
+
+			// Verify tool has an input schema
+			if tc.tool.InputSchema == nil {
+				t.Fatal("tool input schema is nil")
+			}
+
+			schema := tc.tool.InputSchema
+
+			// Verify schema has type "object"
+			schemaType, ok := schema["type"].(string)
+			if !ok {
+				t.Fatal("schema type is not a string")
+			}
+			if schemaType != "object" {
+				t.Errorf("expected schema type 'object', got '%s'", schemaType)
+			}
+
+			// Verify schema has properties
+			properties, ok := schema["properties"].(map[string]interface{})
+			if !ok {
+				t.Fatal("schema properties is not a map")
+			}
+			if len(properties) == 0 {
+				t.Error("schema has no properties")
+			}
+
+			// Verify required fields exist
+			if len(tc.required) > 0 {
+				requiredFields, ok := schema["required"].([]string)
+				if !ok {
+					t.Fatal("schema required is not a []string")
+				}
+
+				// Check that all expected required fields are present
+				requiredMap := make(map[string]bool)
+				for _, field := range requiredFields {
+					requiredMap[field] = true
+				}
+
+				for _, expectedField := range tc.required {
+					if !requiredMap[expectedField] {
+						t.Errorf("expected required field '%s' not found in schema", expectedField)
+					}
+				}
+
+				// Verify all required fields exist in properties
+				for _, field := range requiredFields {
+					if _, exists := properties[field]; !exists {
+						t.Errorf("required field '%s' not found in properties", field)
+					}
+				}
+			}
+
+			// Verify each property has a type
+			for propName, propValue := range properties {
+				propMap, ok := propValue.(map[string]interface{})
+				if !ok {
+					t.Errorf("property '%s' is not a map", propName)
+					continue
+				}
+
+				propType, ok := propMap["type"].(string)
+				if !ok {
+					t.Errorf("property '%s' has no type or type is not a string", propName)
+					continue
+				}
+
+				// Verify type is valid
+				validTypes := map[string]bool{
+					"string":  true,
+					"number":  true,
+					"boolean": true,
+					"object":  true,
+					"array":   true,
+					"integer": true,
+					"null":    true,
+				}
+				if !validTypes[propType] {
+					t.Errorf("property '%s' has invalid type '%s'", propName, propType)
+				}
+			}
+		})
+	}
+}
+
 // Issue Tool Tests
 
 func TestIssueTools_ToolDefinitions(t *testing.T) {
