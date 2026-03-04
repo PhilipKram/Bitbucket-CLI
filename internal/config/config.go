@@ -18,18 +18,17 @@ const (
 var TokenURL = "https://bitbucket.org/site/oauth2/access_token"
 
 var (
-	once      sync.Once
+	configMu  sync.RWMutex
 	cachedDir string
-	cachedErr error
 )
 
 // ResetConfigDirCache resets the cached config directory. This is used in tests
 // to ensure each test gets its own config directory based on its temp HOME.
 // Exported so tests in other packages can reset the cache when needed.
 func ResetConfigDirCache() {
-	once = sync.Once{}
+	configMu.Lock()
+	defer configMu.Unlock()
 	cachedDir = ""
-	cachedErr = nil
 }
 
 type Config struct {
@@ -49,28 +48,42 @@ type TokenData struct {
 }
 
 func ConfigDir() (string, error) {
-	once.Do(func() {
-		var base string
-		// Check XDG_CONFIG_HOME first (for Linux and tests)
-		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-			base = xdg
-		} else {
-			// Fall back to os.UserConfigDir() for platform-specific defaults
-			var err error
-			base, err = os.UserConfigDir()
-			if err != nil {
-				cachedErr = err
-				return
-			}
+	// Fast path: return cached result if available
+	configMu.RLock()
+	if cachedDir != "" {
+		dir := cachedDir
+		configMu.RUnlock()
+		return dir, nil
+	}
+	configMu.RUnlock()
+
+	// Slow path: compute and cache on success only
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if cachedDir != "" {
+		return cachedDir, nil
+	}
+
+	var base string
+	// Check XDG_CONFIG_HOME first (for Linux and tests)
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		base = xdg
+	} else {
+		// Fall back to os.UserConfigDir() for platform-specific defaults
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", err
 		}
-		dir := filepath.Join(base, AppName)
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			cachedErr = err
-			return
-		}
-		cachedDir = dir
-	})
-	return cachedDir, cachedErr
+	}
+	dir := filepath.Join(base, AppName)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	cachedDir = dir
+	return cachedDir, nil
 }
 
 func LoadConfig() (*Config, error) {
