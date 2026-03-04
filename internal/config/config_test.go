@@ -25,6 +25,7 @@ func TestConfigDir_UsesUserConfigDir(t *testing.T) {
 	// Set up a temp dir and configure HOME to ensure os.UserConfigDir() uses it
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	dir, err := ConfigDir()
 	if err != nil {
@@ -61,6 +62,7 @@ func TestConfigDir_UsesUserConfigDir(t *testing.T) {
 func TestSaveAndLoadConfig(t *testing.T) {
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	cfg := &Config{
 		DefaultWorkspace: "myworkspace",
@@ -92,6 +94,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 func TestLoadConfig_DefaultsWhenMissing(t *testing.T) {
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -105,6 +108,7 @@ func TestLoadConfig_DefaultsWhenMissing(t *testing.T) {
 func TestSaveAndLoadToken(t *testing.T) {
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	token := &TokenData{
 		AccessToken:  "access123",
@@ -133,6 +137,7 @@ func TestSaveAndLoadToken(t *testing.T) {
 func TestClearToken(t *testing.T) {
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	token := &TokenData{
 		AccessToken: "access123",
@@ -154,6 +159,7 @@ func TestClearToken(t *testing.T) {
 func TestClearToken_NoFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	setTempHome(t, tmpDir)
+	resetConfigDirCache()
 
 	// Should not error when no token file exists
 	if err := ClearToken(); err != nil {

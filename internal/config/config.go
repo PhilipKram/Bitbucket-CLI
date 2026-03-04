@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 const (
@@ -15,6 +16,20 @@ const (
 
 // TokenURL is a variable so it can be overridden in tests.
 var TokenURL = "https://bitbucket.org/site/oauth2/access_token"
+
+var (
+	once      sync.Once
+	cachedDir string
+	cachedErr error
+)
+
+// resetConfigDirCache resets the cached config directory. This is used in tests
+// to ensure each test gets its own config directory based on its temp HOME.
+func resetConfigDirCache() {
+	once = sync.Once{}
+	cachedDir = ""
+	cachedErr = nil
+}
 
 type Config struct {
 	DefaultWorkspace string `json:"default_workspace"`
@@ -33,23 +48,28 @@ type TokenData struct {
 }
 
 func ConfigDir() (string, error) {
-	var base string
-	// Check XDG_CONFIG_HOME first (for Linux and tests)
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		base = xdg
-	} else {
-		// Fall back to os.UserConfigDir() for platform-specific defaults
-		var err error
-		base, err = os.UserConfigDir()
-		if err != nil {
-			return "", err
+	once.Do(func() {
+		var base string
+		// Check XDG_CONFIG_HOME first (for Linux and tests)
+		if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+			base = xdg
+		} else {
+			// Fall back to os.UserConfigDir() for platform-specific defaults
+			var err error
+			base, err = os.UserConfigDir()
+			if err != nil {
+				cachedErr = err
+				return
+			}
 		}
-	}
-	dir := filepath.Join(base, AppName)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return "", err
-	}
-	return dir, nil
+		dir := filepath.Join(base, AppName)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			cachedErr = err
+			return
+		}
+		cachedDir = dir
+	})
+	return cachedDir, cachedErr
 }
 
 func LoadConfig() (*Config, error) {
