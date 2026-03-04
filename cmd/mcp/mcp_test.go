@@ -26,10 +26,13 @@ func TestIntegration_MCP_CommandStructure(t *testing.T) {
 		t.Error("Expected non-empty Short description")
 	}
 
-	// Verify serve subcommand exists
-	serveCmd := cmd.Commands()[0]
-	if serveCmd.Use != "serve" {
-		t.Errorf("Expected first subcommand 'serve', got %s", serveCmd.Use)
+	// Verify serve subcommand exists without relying on command ordering
+	serveCmd, _, err := cmd.Find([]string{"serve"})
+	if err != nil {
+		t.Fatalf("Failed to find 'serve' subcommand: %v", err)
+	}
+	if serveCmd == nil || serveCmd.Use != "serve" {
+		t.Errorf("Expected subcommand 'serve', got %v", serveCmd)
 	}
 }
 

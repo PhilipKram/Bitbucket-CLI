@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -463,7 +464,7 @@ func TestServer_SetRegistry(t *testing.T) {
 	// Test tools/list handler
 	listReq := &Request{
 		JSONRPC: "2.0",
-		ID:      1,
+		ID:      json.RawMessage(`1`),
 		Method:  "tools/list",
 		Params:  map[string]interface{}{},
 	}
@@ -491,7 +492,7 @@ func TestServer_SetRegistry(t *testing.T) {
 	// Test tools/call handler
 	callReq := &Request{
 		JSONRPC: "2.0",
-		ID:      2,
+		ID:      json.RawMessage(`2`),
 		Method:  "tools/call",
 		Params: map[string]interface{}{
 			"name":      "test_tool",

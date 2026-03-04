@@ -129,11 +129,14 @@ func (r *ToolRegistry) Count() int {
 // SetRegistry sets the tool registry for the server.
 // This allows the server to use custom tool definitions.
 func (s *Server) SetRegistry(registry *ToolRegistry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if registry == nil {
+		return
+	}
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
 
 	// Override the tools/list handler to use the registry
-	s.RegisterHandler("tools/list", func(req *Request) (map[string]interface{}, error) {
+	s.handlers["tools/list"] = func(req *Request) (map[string]interface{}, error) {
 		tools := registry.List()
 		result := ToolsListResult{
 			Tools: tools,
@@ -150,10 +153,10 @@ func (s *Server) SetRegistry(registry *ToolRegistry) {
 		}
 
 		return resultMap, nil
-	})
+	}
 
 	// Override the tools/call handler to use the registry
-	s.RegisterHandler("tools/call", func(req *Request) (map[string]interface{}, error) {
+	s.handlers["tools/call"] = func(req *Request) (map[string]interface{}, error) {
 		// Parse tool call params
 		var callReq ToolCallRequest
 		if req.Params != nil {
@@ -181,7 +184,7 @@ func (s *Server) SetRegistry(registry *ToolRegistry) {
 		}
 
 		return resultMap, nil
-	})
+	}
 }
 
 // NewJSONSchema creates a JSON schema map for tool input parameters.

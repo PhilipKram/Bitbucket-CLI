@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"encoding/json"
-	"reflect"
 	"testing"
 )
 
@@ -15,7 +14,7 @@ func TestRequest_EncodeDecode(t *testing.T) {
 			name: "request with string ID",
 			req: &Request{
 				JSONRPC: "2.0",
-				ID:      "test-id-123",
+				ID:      json.RawMessage(`"test-id-123"`),
 				Method:  "initialize",
 				Params: map[string]interface{}{
 					"protocolVersion": ProtocolVersion,
@@ -27,7 +26,7 @@ func TestRequest_EncodeDecode(t *testing.T) {
 			name: "request with numeric ID",
 			req: &Request{
 				JSONRPC: "2.0",
-				ID:      42,
+				ID:      json.RawMessage(`42`),
 				Method:  "tools/list",
 				Params:  map[string]interface{}{},
 			},
@@ -36,7 +35,7 @@ func TestRequest_EncodeDecode(t *testing.T) {
 			name: "request without params",
 			req: &Request{
 				JSONRPC: "2.0",
-				ID:      1,
+				ID:      json.RawMessage(`1`),
 				Method:  "ping",
 			},
 		},
@@ -44,7 +43,7 @@ func TestRequest_EncodeDecode(t *testing.T) {
 			name: "request with complex params",
 			req: &Request{
 				JSONRPC: "2.0",
-				ID:      "complex-1",
+				ID:      json.RawMessage(`"complex-1"`),
 				Method:  "tools/call",
 				Params: map[string]interface{}{
 					"name": "test_tool",
@@ -79,9 +78,8 @@ func TestRequest_EncodeDecode(t *testing.T) {
 				t.Errorf("JSONRPC = %v, want %v", decoded.JSONRPC, tt.req.JSONRPC)
 			}
 
-			// ID comparison needs special handling due to JSON number conversion
-			if !compareID(decoded.ID, tt.req.ID) {
-				t.Errorf("ID = %v (type %T), want %v (type %T)", decoded.ID, decoded.ID, tt.req.ID, tt.req.ID)
+			if string(decoded.ID) != string(tt.req.ID) {
+				t.Errorf("ID = %s, want %s", decoded.ID, tt.req.ID)
 			}
 
 			if decoded.Method != tt.req.Method {
@@ -105,7 +103,7 @@ func TestResponse_EncodeDecode(t *testing.T) {
 			name: "response with string ID",
 			resp: &Response{
 				JSONRPC: "2.0",
-				ID:      "resp-123",
+				ID:      json.RawMessage(`"resp-123"`),
 				Result: map[string]interface{}{
 					"protocolVersion": ProtocolVersion,
 					"capabilities":    map[string]interface{}{},
@@ -116,7 +114,7 @@ func TestResponse_EncodeDecode(t *testing.T) {
 			name: "response with numeric ID",
 			resp: &Response{
 				JSONRPC: "2.0",
-				ID:      99,
+				ID:      json.RawMessage(`99`),
 				Result: map[string]interface{}{
 					"success": true,
 				},
@@ -126,7 +124,7 @@ func TestResponse_EncodeDecode(t *testing.T) {
 			name: "response with empty result",
 			resp: &Response{
 				JSONRPC: "2.0",
-				ID:      1,
+				ID:      json.RawMessage(`1`),
 				Result:  map[string]interface{}{},
 			},
 		},
@@ -134,7 +132,7 @@ func TestResponse_EncodeDecode(t *testing.T) {
 			name: "response with complex result",
 			resp: &Response{
 				JSONRPC: "2.0",
-				ID:      "complex-resp",
+				ID:      json.RawMessage(`"complex-resp"`),
 				Result: map[string]interface{}{
 					"tools": []interface{}{
 						map[string]interface{}{
@@ -167,8 +165,8 @@ func TestResponse_EncodeDecode(t *testing.T) {
 				t.Errorf("JSONRPC = %v, want %v", decoded.JSONRPC, tt.resp.JSONRPC)
 			}
 
-			if !compareID(decoded.ID, tt.resp.ID) {
-				t.Errorf("ID = %v (type %T), want %v (type %T)", decoded.ID, decoded.ID, tt.resp.ID, tt.resp.ID)
+			if string(decoded.ID) != string(tt.resp.ID) {
+				t.Errorf("ID = %s, want %s", decoded.ID, tt.resp.ID)
 			}
 
 			if decoded.Result == nil {
@@ -187,7 +185,7 @@ func TestErrorResponse_EncodeDecode(t *testing.T) {
 			name: "error with string ID",
 			errResp: &ErrorResponse{
 				JSONRPC: "2.0",
-				ID:      "err-123",
+				ID:      json.RawMessage(`"err-123"`),
 				Error: RPCError{
 					Code:    MethodNotFound,
 					Message: "Method not found",
@@ -198,7 +196,7 @@ func TestErrorResponse_EncodeDecode(t *testing.T) {
 			name: "error with numeric ID",
 			errResp: &ErrorResponse{
 				JSONRPC: "2.0",
-				ID:      42,
+				ID:      json.RawMessage(`42`),
 				Error: RPCError{
 					Code:    InvalidParams,
 					Message: "Invalid parameters",
@@ -219,7 +217,7 @@ func TestErrorResponse_EncodeDecode(t *testing.T) {
 			name: "error with data",
 			errResp: &ErrorResponse{
 				JSONRPC: "2.0",
-				ID:      1,
+				ID:      json.RawMessage(`1`),
 				Error: RPCError{
 					Code:    InternalError,
 					Message: "Internal error",
@@ -251,8 +249,8 @@ func TestErrorResponse_EncodeDecode(t *testing.T) {
 				t.Errorf("JSONRPC = %v, want %v", decoded.JSONRPC, tt.errResp.JSONRPC)
 			}
 
-			if tt.errResp.ID != nil && !compareID(decoded.ID, tt.errResp.ID) {
-				t.Errorf("ID = %v (type %T), want %v (type %T)", decoded.ID, decoded.ID, tt.errResp.ID, tt.errResp.ID)
+			if tt.errResp.ID != nil && string(decoded.ID) != string(tt.errResp.ID) {
+				t.Errorf("ID = %s, want %s", decoded.ID, tt.errResp.ID)
 			}
 
 			if decoded.Error.Code != tt.errResp.Error.Code {
@@ -339,7 +337,7 @@ func TestNotification_EncodeDecode(t *testing.T) {
 }
 
 func TestNewRequest(t *testing.T) {
-	req := NewRequest(123, "test/method", map[string]interface{}{
+	req := NewRequest(json.RawMessage(`123`), "test/method", map[string]interface{}{
 		"param1": "value1",
 	})
 
@@ -347,8 +345,8 @@ func TestNewRequest(t *testing.T) {
 		t.Errorf("JSONRPC = %v, want 2.0", req.JSONRPC)
 	}
 
-	if req.ID != 123 {
-		t.Errorf("ID = %v, want 123", req.ID)
+	if string(req.ID) != "123" {
+		t.Errorf("ID = %s, want 123", req.ID)
 	}
 
 	if req.Method != "test/method" {
@@ -361,7 +359,7 @@ func TestNewRequest(t *testing.T) {
 }
 
 func TestNewResponse(t *testing.T) {
-	resp := NewResponse("test-id", map[string]interface{}{
+	resp := NewResponse(json.RawMessage(`"test-id"`), map[string]interface{}{
 		"success": true,
 	})
 
@@ -369,8 +367,8 @@ func TestNewResponse(t *testing.T) {
 		t.Errorf("JSONRPC = %v, want 2.0", resp.JSONRPC)
 	}
 
-	if resp.ID != "test-id" {
-		t.Errorf("ID = %v, want test-id", resp.ID)
+	if string(resp.ID) != `"test-id"` {
+		t.Errorf("ID = %s, want \"test-id\"", resp.ID)
 	}
 
 	if resp.Result["success"] != true {
@@ -379,7 +377,7 @@ func TestNewResponse(t *testing.T) {
 }
 
 func TestNewErrorResponse(t *testing.T) {
-	errResp := NewErrorResponse(456, MethodNotFound, "Method not found", map[string]interface{}{
+	errResp := NewErrorResponse(json.RawMessage(`456`), MethodNotFound, "Method not found", map[string]interface{}{
 		"method": "unknown",
 	})
 
@@ -387,8 +385,8 @@ func TestNewErrorResponse(t *testing.T) {
 		t.Errorf("JSONRPC = %v, want 2.0", errResp.JSONRPC)
 	}
 
-	if errResp.ID != 456 {
-		t.Errorf("ID = %v, want 456", errResp.ID)
+	if string(errResp.ID) != "456" {
+		t.Errorf("ID = %s, want 456", errResp.ID)
 	}
 
 	if errResp.Error.Code != MethodNotFound {
@@ -877,36 +875,3 @@ func TestProtocolVersion(t *testing.T) {
 	}
 }
 
-// compareID compares two IDs, handling JSON number conversion
-func compareID(a, b interface{}) bool {
-	// If both are the same type and equal, return true
-	if reflect.DeepEqual(a, b) {
-		return true
-	}
-
-	// Handle JSON number conversion (int -> float64)
-	aFloat, aIsFloat := a.(float64)
-	bFloat, bIsFloat := b.(float64)
-	aInt, aIsInt := a.(int)
-	bInt, bIsInt := b.(int)
-
-	// a is float64, b is int
-	if aIsFloat && bIsInt {
-		return aFloat == float64(bInt)
-	}
-
-	// a is int, b is float64
-	if aIsInt && bIsFloat {
-		return float64(aInt) == bFloat
-	}
-
-	// Handle string comparison
-	aStr, aIsStr := a.(string)
-	bStr, bIsStr := b.(string)
-
-	if aIsStr && bIsStr {
-		return aStr == bStr
-	}
-
-	return false
-}

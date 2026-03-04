@@ -12,7 +12,7 @@ func TestServerInitialize(t *testing.T) {
 	// Create input with initialize request
 	initReq := Request{
 		JSONRPC: "2.0",
-		ID:      1,
+		ID:      json.RawMessage(`1`),
 		Method:  "initialize",
 		Params: map[string]interface{}{
 			"protocolVersion": ProtocolVersion,
@@ -54,9 +54,8 @@ func TestServerInitialize(t *testing.T) {
 		t.Errorf("Expected jsonrpc '2.0', got %s", resp.JSONRPC)
 	}
 
-	// JSON unmarshaling converts numbers to float64
-	if idFloat, ok := resp.ID.(float64); !ok || idFloat != 1.0 {
-		t.Errorf("Expected id 1, got %v (type %T)", resp.ID, resp.ID)
+	if string(resp.ID) != "1" {
+		t.Errorf("Expected id 1, got %s", resp.ID)
 	}
 
 	if resp.Result == nil {
@@ -80,7 +79,7 @@ func TestServerInitialize(t *testing.T) {
 func TestServerToolsList(t *testing.T) {
 	toolsReq := Request{
 		JSONRPC: "2.0",
-		ID:      2,
+		ID:      json.RawMessage(`2`),
 		Method:  "tools/list",
 		Params:  map[string]interface{}{},
 	}
@@ -111,9 +110,8 @@ func TestServerToolsList(t *testing.T) {
 		t.Errorf("Expected jsonrpc '2.0', got %s", resp.JSONRPC)
 	}
 
-	// JSON unmarshaling converts numbers to float64
-	if idFloat, ok := resp.ID.(float64); !ok || idFloat != 2.0 {
-		t.Errorf("Expected id 2, got %v (type %T)", resp.ID, resp.ID)
+	if string(resp.ID) != "2" {
+		t.Errorf("Expected id 2, got %s", resp.ID)
 	}
 
 	// Check result contains tools array
@@ -125,7 +123,7 @@ func TestServerToolsList(t *testing.T) {
 func TestServerToolsCall(t *testing.T) {
 	callReq := Request{
 		JSONRPC: "2.0",
-		ID:      3,
+		ID:      json.RawMessage(`3`),
 		Method:  "tools/call",
 		Params: map[string]interface{}{
 			"name":      "test_tool",
@@ -159,9 +157,8 @@ func TestServerToolsCall(t *testing.T) {
 		t.Errorf("Expected jsonrpc '2.0', got %s", resp.JSONRPC)
 	}
 
-	// JSON unmarshaling converts numbers to float64
-	if idFloat, ok := resp.ID.(float64); !ok || idFloat != 3.0 {
-		t.Errorf("Expected id 3, got %v (type %T)", resp.ID, resp.ID)
+	if string(resp.ID) != "3" {
+		t.Errorf("Expected id 3, got %s", resp.ID)
 	}
 
 	// For now, tools/call should return an error result since no tools are implemented
@@ -177,7 +174,7 @@ func TestServerToolsCall(t *testing.T) {
 func TestServerMethodNotFound(t *testing.T) {
 	req := Request{
 		JSONRPC: "2.0",
-		ID:      4,
+		ID:      json.RawMessage(`4`),
 		Method:  "unknown/method",
 		Params:  map[string]interface{}{},
 	}
@@ -243,7 +240,7 @@ func TestServerInvalidJSON(t *testing.T) {
 func TestServerInvalidJSONRPCVersion(t *testing.T) {
 	req := Request{
 		JSONRPC: "1.0",
-		ID:      5,
+		ID:      json.RawMessage(`5`),
 		Method:  "initialize",
 		Params:  map[string]interface{}{},
 	}
@@ -328,7 +325,7 @@ func TestServerCustomHandler(t *testing.T) {
 	// Create request
 	req := Request{
 		JSONRPC: "2.0",
-		ID:      6,
+		ID:      json.RawMessage(`6`),
 		Method:  "custom/method",
 		Params:  map[string]interface{}{},
 	}

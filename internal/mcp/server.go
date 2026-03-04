@@ -13,10 +13,12 @@ import (
 // Server implements an MCP (Model Context Protocol) server that communicates
 // via JSON-RPC 2.0 over stdio (stdin/stdout).
 type Server struct {
-	reader  *bufio.Reader
-	writer  *bufio.Writer
-	mu      sync.Mutex // protects writes to stdout
-	handlers map[string]RequestHandler
+	reader *bufio.Reader
+	writer *bufio.Writer
+	mu     sync.Mutex // protects writes to stdout
+
+	handlersMu sync.RWMutex
+	handlers   map[string]RequestHandler
 
 	// Server info
 	name        string
@@ -73,6 +75,8 @@ func NewServerWith(reader io.Reader, writer io.Writer, name, version, descriptio
 
 // RegisterHandler registers a custom handler for a specific JSON-RPC method.
 func (s *Server) RegisterHandler(method string, handler RequestHandler) {
+	s.handlersMu.Lock()
+	defer s.handlersMu.Unlock()
 	s.handlers[method] = handler
 }
 
@@ -135,14 +139,21 @@ func (s *Server) processOneRequest() error {
 		return nil
 	}
 
-	// Check if this is a notification (no id)
+	// Check if this is a notification (absent id) vs invalid request (null id)
 	if req.ID == nil {
-		// Notifications don't get responses, just handle them
+		// No id field present - this is a notification
 		return s.handleNotification(&req)
+	}
+	if string(req.ID) == "null" {
+		// Explicit "id": null is invalid per JSON-RPC spec
+		s.sendError(nil, InvalidRequest, "Invalid Request: id must not be null", nil)
+		return nil
 	}
 
 	// Dispatch to handler
+	s.handlersMu.RLock()
 	handler, exists := s.handlers[req.Method]
+	s.handlersMu.RUnlock()
 	if !exists {
 		s.sendError(req.ID, MethodNotFound, fmt.Sprintf("Method not found: %s", req.Method), nil)
 		return nil
@@ -162,7 +173,9 @@ func (s *Server) processOneRequest() error {
 // handleNotification processes a JSON-RPC notification (no response).
 func (s *Server) handleNotification(req *Request) error {
 	// Notifications are fire-and-forget
+	s.handlersMu.RLock()
 	handler, exists := s.handlers[req.Method]
+	s.handlersMu.RUnlock()
 	if !exists {
 		// Silently ignore unknown notifications per JSON-RPC spec
 		return nil
@@ -224,7 +237,7 @@ func (s *Server) handleInitialized(req *Request) (map[string]interface{}, error)
 
 // handleToolsList handles the tools/list request.
 func (s *Server) handleToolsList(req *Request) (map[string]interface{}, error) {
-	// For now, return empty list - tools will be added in phase 3
+	// Default handler returns empty list; overridden when a tool registry is configured
 	result := ToolsListResult{
 		Tools: []Tool{},
 	}
@@ -256,7 +269,7 @@ func (s *Server) handleToolsCall(req *Request) (map[string]interface{}, error) {
 		}
 	}
 
-	// For now, return error - tool implementations will be added in phase 3
+	// Default handler returns not-found; overridden when a tool registry is configured
 	result := ToolCallResult{
 		Content: []Content{
 			NewTextContent(fmt.Sprintf("Tool not found: %s", callReq.Name)),
@@ -278,13 +291,13 @@ func (s *Server) handleToolsCall(req *Request) (map[string]interface{}, error) {
 }
 
 // sendResponse sends a JSON-RPC success response to stdout.
-func (s *Server) sendResponse(id interface{}, result map[string]interface{}) error {
+func (s *Server) sendResponse(id json.RawMessage, result map[string]interface{}) error {
 	resp := NewResponse(id, result)
 	return s.writeJSON(resp)
 }
 
 // sendError sends a JSON-RPC error response to stdout.
-func (s *Server) sendError(id interface{}, code int, message string, data interface{}) error {
+func (s *Server) sendError(id json.RawMessage, code int, message string, data interface{}) error {
 	errResp := NewErrorResponse(id, code, message, data)
 	return s.writeJSON(errResp)
 }

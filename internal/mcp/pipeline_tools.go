@@ -15,6 +15,9 @@ func PipelineListHandler(ctx context.Context, args map[string]interface{}) ([]Co
 	if !ok || repository == "" {
 		return nil, fmt.Errorf("repository parameter is required")
 	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
 
 	// Extract optional parameters
 	page := 1
@@ -52,6 +55,9 @@ func PipelineTriggerHandler(ctx context.Context, args map[string]interface{}) ([
 	repository, ok := args["repository"].(string)
 	if !ok || repository == "" {
 		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
 	}
 
 	// Extract optional parameters

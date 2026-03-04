@@ -3,6 +3,7 @@ package mcp
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/PhilipKram/bitbucket-cli/internal/buildinfo"
 	"github.com/PhilipKram/bitbucket-cli/internal/mcp"
 )
 
@@ -31,7 +32,7 @@ The server communicates via JSON-RPC 2.0 over stdin/stdout.`,
 			// Create MCP server
 			server := mcp.NewServer(
 				"bb-mcp",
-				"1.0.0",
+				buildinfo.Version,
 				"Bitbucket CLI MCP server - exposes bb commands as MCP tools",
 			)
 

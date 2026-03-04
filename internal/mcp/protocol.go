@@ -10,7 +10,7 @@ const ProtocolVersion = "2025-11-25"
 // Request represents a JSON-RPC 2.0 request message.
 type Request struct {
 	JSONRPC string                 `json:"jsonrpc"`
-	ID      interface{}            `json:"id"` // string or number, must not be null
+	ID      json.RawMessage        `json:"id,omitempty"` // string or number; absent for notifications
 	Method  string                 `json:"method"`
 	Params  map[string]interface{} `json:"params,omitempty"`
 }
@@ -18,15 +18,15 @@ type Request struct {
 // Response represents a JSON-RPC 2.0 success response message.
 type Response struct {
 	JSONRPC string                 `json:"jsonrpc"`
-	ID      interface{}            `json:"id"`
+	ID      json.RawMessage        `json:"id"`
 	Result  map[string]interface{} `json:"result"`
 }
 
 // ErrorResponse represents a JSON-RPC 2.0 error response message.
 type ErrorResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id,omitempty"`
-	Error   RPCError    `json:"error"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id,omitempty"`
+	Error   RPCError        `json:"error"`
 }
 
 // RPCError represents a JSON-RPC 2.0 error object.
@@ -232,7 +232,7 @@ type Resource struct {
 // Helper Functions
 
 // NewRequest creates a new JSON-RPC request with the given method and params.
-func NewRequest(id interface{}, method string, params map[string]interface{}) *Request {
+func NewRequest(id json.RawMessage, method string, params map[string]interface{}) *Request {
 	return &Request{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -242,7 +242,7 @@ func NewRequest(id interface{}, method string, params map[string]interface{}) *R
 }
 
 // NewResponse creates a new JSON-RPC success response.
-func NewResponse(id interface{}, result map[string]interface{}) *Response {
+func NewResponse(id json.RawMessage, result map[string]interface{}) *Response {
 	return &Response{
 		JSONRPC: "2.0",
 		ID:      id,
@@ -251,7 +251,7 @@ func NewResponse(id interface{}, result map[string]interface{}) *Response {
 }
 
 // NewErrorResponse creates a new JSON-RPC error response.
-func NewErrorResponse(id interface{}, code int, message string, data interface{}) *ErrorResponse {
+func NewErrorResponse(id json.RawMessage, code int, message string, data interface{}) *ErrorResponse {
 	return &ErrorResponse{
 		JSONRPC: "2.0",
 		ID:      id,

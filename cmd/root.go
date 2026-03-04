@@ -11,6 +11,7 @@ import (
 	completionCmd "github.com/PhilipKram/bitbucket-cli/cmd/completion"
 	configCmd "github.com/PhilipKram/bitbucket-cli/cmd/config"
 	issueCmd "github.com/PhilipKram/bitbucket-cli/cmd/issue"
+	"github.com/PhilipKram/bitbucket-cli/internal/buildinfo"
 	"github.com/PhilipKram/bitbucket-cli/internal/update"
 	mcpCmd "github.com/PhilipKram/bitbucket-cli/cmd/mcp"
 	pipelineCmd "github.com/PhilipKram/bitbucket-cli/cmd/pipeline"
@@ -27,6 +28,11 @@ var (
 	commit  = "none"
 	date    = "unknown"
 )
+
+func init() {
+	// Propagate build-time version to buildinfo so other packages can access it.
+	buildinfo.Version = version
+}
 
 var updateCh = make(chan *update.UpdateInfo, 1)
 
