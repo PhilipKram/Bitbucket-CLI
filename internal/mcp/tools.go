@@ -292,3 +292,35 @@ func NewPRCreateTool() Tool {
 		}, []string{"repository", "title", "source"}),
 	}
 }
+
+// Issue Tool Definitions
+
+// NewIssueListTool creates a tool definition for listing issues.
+func NewIssueListTool() Tool {
+	return Tool{
+		Name:        "issue_list",
+		Title:       "List Issues",
+		Description: "List issues in a Bitbucket repository with optional state filtering",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"state":      NewStringProperty("Optional state filter: new, open, resolved, on hold, invalid, duplicate, wontfix, closed"),
+			"page":       NewNumberProperty("Optional page number (default: 1)"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewIssueCreateTool creates a tool definition for creating an issue.
+func NewIssueCreateTool() Tool {
+	return Tool{
+		Name:        "issue_create",
+		Title:       "Create Issue",
+		Description: "Create a new issue in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"title":      NewStringProperty("Issue title"),
+			"content":    NewStringProperty("Optional issue description"),
+			"kind":       NewStringProperty("Optional issue kind: bug, enhancement, proposal, task (default: bug)"),
+			"priority":   NewStringProperty("Optional priority: trivial, minor, major, critical, blocker (default: major)"),
+		}, []string{"repository", "title"}),
+	}
+}

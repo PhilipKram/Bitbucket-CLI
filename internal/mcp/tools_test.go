@@ -695,3 +695,117 @@ func TestPRTools_RegistryIntegration(t *testing.T) {
 		}
 	}
 }
+
+// Issue Tool Tests
+
+func TestIssueTools_ToolDefinitions(t *testing.T) {
+	// Test Issue List tool definition
+	listTool := NewIssueListTool()
+	if listTool.Name != "issue_list" {
+		t.Errorf("expected name 'issue_list', got '%s'", listTool.Name)
+	}
+	if listTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if listTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test Issue Create tool definition
+	createTool := NewIssueCreateTool()
+	if createTool.Name != "issue_create" {
+		t.Errorf("expected name 'issue_create', got '%s'", createTool.Name)
+	}
+	if createTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if createTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+}
+
+func TestIssueTools_HandlerValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Test Issue List handler parameter validation
+	t.Run("IssueList_MissingRepository", func(t *testing.T) {
+		_, err := IssueListHandler(ctx, map[string]interface{}{})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	// Test Issue Create handler parameter validation
+	t.Run("IssueCreate_MissingRepository", func(t *testing.T) {
+		_, err := IssueCreateHandler(ctx, map[string]interface{}{
+			"title": "Test Issue",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("IssueCreate_MissingTitle", func(t *testing.T) {
+		_, err := IssueCreateHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing title parameter")
+		}
+		if !strings.Contains(err.Error(), "title") {
+			t.Errorf("expected error message to mention title, got: %v", err)
+		}
+	})
+}
+
+func TestIssueTools_RegistryIntegration(t *testing.T) {
+	// Create a registry and register all Issue tools
+	registry := NewToolRegistry()
+
+	err := registry.Register(NewIssueListTool(), IssueListHandler)
+	if err != nil {
+		t.Errorf("failed to register issue_list tool: %v", err)
+	}
+
+	err = registry.Register(NewIssueCreateTool(), IssueCreateHandler)
+	if err != nil {
+		t.Errorf("failed to register issue_create tool: %v", err)
+	}
+
+	// Verify all tools are registered
+	if registry.Count() != 2 {
+		t.Errorf("expected 2 tools registered, got %d", registry.Count())
+	}
+
+	// Verify each tool can be retrieved
+	tools := []string{"issue_list", "issue_create"}
+	for _, toolName := range tools {
+		rt := registry.Get(toolName)
+		if rt == nil {
+			t.Errorf("tool %s not found in registry", toolName)
+		}
+	}
+
+	// Verify tools appear in list
+	toolList := registry.List()
+	if len(toolList) != 2 {
+		t.Errorf("expected 2 tools in list, got %d", len(toolList))
+	}
+
+	toolNames := make(map[string]bool)
+	for _, tool := range toolList {
+		toolNames[tool.Name] = true
+	}
+
+	for _, expectedName := range tools {
+		if !toolNames[expectedName] {
+			t.Errorf("expected tool %s in list", expectedName)
+		}
+	}
+}
