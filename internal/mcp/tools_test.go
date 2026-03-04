@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -521,5 +522,176 @@ func TestServer_SetRegistry(t *testing.T) {
 
 	if len(content) != 1 {
 		t.Errorf("expected 1 content item, got %d", len(content))
+	}
+}
+
+// PR Tool Tests
+
+func TestPRTools_ToolDefinitions(t *testing.T) {
+	// Test PR List tool definition
+	listTool := NewPRListTool()
+	if listTool.Name != "pr_list" {
+		t.Errorf("expected name 'pr_list', got '%s'", listTool.Name)
+	}
+	if listTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if listTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR View tool definition
+	viewTool := NewPRViewTool()
+	if viewTool.Name != "pr_view" {
+		t.Errorf("expected name 'pr_view', got '%s'", viewTool.Name)
+	}
+	if viewTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if viewTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR Create tool definition
+	createTool := NewPRCreateTool()
+	if createTool.Name != "pr_create" {
+		t.Errorf("expected name 'pr_create', got '%s'", createTool.Name)
+	}
+	if createTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if createTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+}
+
+func TestPRTools_HandlerValidation(t *testing.T) {
+	ctx := context.Background()
+
+	// Test PR List handler parameter validation
+	t.Run("PRList_MissingRepository", func(t *testing.T) {
+		_, err := PRListHandler(ctx, map[string]interface{}{})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	// Test PR View handler parameter validation
+	t.Run("PRView_MissingRepository", func(t *testing.T) {
+		_, err := PRViewHandler(ctx, map[string]interface{}{
+			"pr_id": "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRView_MissingPRID", func(t *testing.T) {
+		_, err := PRViewHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	// Test PR Create handler parameter validation
+	t.Run("PRCreate_MissingRepository", func(t *testing.T) {
+		_, err := PRCreateHandler(ctx, map[string]interface{}{
+			"title":  "Test PR",
+			"source": "feature-branch",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRCreate_MissingTitle", func(t *testing.T) {
+		_, err := PRCreateHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+			"source":     "feature-branch",
+		})
+		if err == nil {
+			t.Error("expected error for missing title parameter")
+		}
+		if !strings.Contains(err.Error(), "title") {
+			t.Errorf("expected error message to mention title, got: %v", err)
+		}
+	})
+
+	t.Run("PRCreate_MissingSource", func(t *testing.T) {
+		_, err := PRCreateHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+			"title":      "Test PR",
+		})
+		if err == nil {
+			t.Error("expected error for missing source parameter")
+		}
+		if !strings.Contains(err.Error(), "source") {
+			t.Errorf("expected error message to mention source, got: %v", err)
+		}
+	})
+}
+
+func TestPRTools_RegistryIntegration(t *testing.T) {
+	// Create a registry and register all PR tools
+	registry := NewToolRegistry()
+
+	err := registry.Register(NewPRListTool(), PRListHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_list tool: %v", err)
+	}
+
+	err = registry.Register(NewPRViewTool(), PRViewHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_view tool: %v", err)
+	}
+
+	err = registry.Register(NewPRCreateTool(), PRCreateHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_create tool: %v", err)
+	}
+
+	// Verify all tools are registered
+	if registry.Count() != 3 {
+		t.Errorf("expected 3 tools registered, got %d", registry.Count())
+	}
+
+	// Verify each tool can be retrieved
+	tools := []string{"pr_list", "pr_view", "pr_create"}
+	for _, toolName := range tools {
+		rt := registry.Get(toolName)
+		if rt == nil {
+			t.Errorf("tool %s not found in registry", toolName)
+		}
+	}
+
+	// Verify tools appear in list
+	toolList := registry.List()
+	if len(toolList) != 3 {
+		t.Errorf("expected 3 tools in list, got %d", len(toolList))
+	}
+
+	toolNames := make(map[string]bool)
+	for _, tool := range toolList {
+		toolNames[tool.Name] = true
+	}
+
+	for _, expectedName := range tools {
+		if !toolNames[expectedName] {
+			t.Errorf("expected tool %s in list", expectedName)
+		}
 	}
 }

@@ -246,3 +246,49 @@ func NewArrayProperty(description string, items map[string]interface{}) map[stri
 		"items":       items,
 	}
 }
+
+// PR Tool Definitions
+
+// NewPRListTool creates a tool definition for listing pull requests.
+func NewPRListTool() Tool {
+	return Tool{
+		Name:        "pr_list",
+		Title:       "List Pull Requests",
+		Description: "List pull requests in a Bitbucket repository with optional state filtering",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"state":      NewStringProperty("Optional state filter: OPEN, MERGED, DECLINED, or SUPERSEDED"),
+			"page":       NewNumberProperty("Optional page number (default: 1)"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewPRViewTool creates a tool definition for viewing a pull request.
+func NewPRViewTool() Tool {
+	return Tool{
+		Name:        "pr_view",
+		Title:       "View Pull Request",
+		Description: "View detailed information about a specific pull request",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"pr_id":      NewStringProperty("Pull request ID"),
+		}, []string{"repository", "pr_id"}),
+	}
+}
+
+// NewPRCreateTool creates a tool definition for creating a pull request.
+func NewPRCreateTool() Tool {
+	return Tool{
+		Name:        "pr_create",
+		Title:       "Create Pull Request",
+		Description: "Create a new pull request in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository":   NewStringProperty("Repository in format workspace/repo-slug"),
+			"title":        NewStringProperty("Pull request title"),
+			"source":       NewStringProperty("Source branch name"),
+			"description":  NewStringProperty("Optional pull request description"),
+			"destination":  NewStringProperty("Optional destination branch (defaults to main branch)"),
+			"close_branch": NewBooleanProperty("Optional: close source branch after merge (default: false)"),
+		}, []string{"repository", "title", "source"}),
+	}
+}
