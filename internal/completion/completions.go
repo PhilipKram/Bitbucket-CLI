@@ -4,10 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/PhilipKram/bitbucket-cli/internal/api"
 	"github.com/spf13/cobra"
 )
+
+// escapeRepoPath escapes each segment of a workspace/repo-slug path individually,
+// preserving the "/" separator so the Bitbucket API URL remains valid.
+func escapeRepoPath(fullName string) string {
+	parts := strings.SplitN(fullName, "/", 2)
+	if len(parts) != 2 {
+		return url.PathEscape(fullName)
+	}
+	return url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1])
+}
 
 // Workspace represents a Bitbucket workspace for completion purposes
 type Workspace struct {
@@ -256,7 +267,7 @@ func BranchNames(cmd *cobra.Command, args []string, toComplete string) ([]string
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(args[0]))
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", escapeRepoPath(args[0]))
 	branches, err := api.GetPaginated[Branch](client, path)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -282,7 +293,7 @@ func BranchNamesWithDescriptions(cmd *cobra.Command, args []string, toComplete s
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(args[0]))
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", escapeRepoPath(args[0]))
 	branches, err := api.GetPaginated[Branch](client, path)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -308,7 +319,7 @@ func GetBranchNames(repoFullName string) ([]string, error) {
 		return []string{}, nil
 	}
 
-	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", url.PathEscape(repoFullName))
+	path := fmt.Sprintf("/repositories/%s/refs/branches?pagelen=50", escapeRepoPath(repoFullName))
 	branches, err := api.GetPaginated[Branch](client, path)
 	if err != nil {
 		return nil, err
@@ -334,7 +345,7 @@ func PRNumbers(cmd *cobra.Command, args []string, toComplete string) ([]string, 
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(args[0]))
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", escapeRepoPath(args[0]))
 	prs, err := api.GetPaginated[PullRequest](client, path)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -360,7 +371,7 @@ func PRNumbersWithDescriptions(cmd *cobra.Command, args []string, toComplete str
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 
-	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(args[0]))
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", escapeRepoPath(args[0]))
 	prs, err := api.GetPaginated[PullRequest](client, path)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -387,7 +398,7 @@ func GetPRNumbers(repoFullName string) ([]string, error) {
 		return []string{}, nil
 	}
 
-	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", url.PathEscape(repoFullName))
+	path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=50&state=OPEN", escapeRepoPath(repoFullName))
 	prs, err := api.GetPaginated[PullRequest](client, path)
 	if err != nil {
 		return nil, err
