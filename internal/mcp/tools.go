@@ -324,3 +324,33 @@ func NewIssueCreateTool() Tool {
 		}, []string{"repository", "title"}),
 	}
 }
+
+// Pipeline Tool Definitions
+
+// NewPipelineListTool creates a tool definition for listing pipelines.
+func NewPipelineListTool() Tool {
+	return Tool{
+		Name:        "pipeline_list",
+		Title:       "List Pipelines",
+		Description: "List CI/CD pipelines in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"page":       NewNumberProperty("Optional page number (default: 1)"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewPipelineTriggerTool creates a tool definition for triggering a pipeline.
+func NewPipelineTriggerTool() Tool {
+	return Tool{
+		Name:        "pipeline_trigger",
+		Title:       "Trigger Pipeline",
+		Description: "Trigger a new CI/CD pipeline in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"branch":     NewStringProperty("Optional branch to run pipeline on (default: main)"),
+			"pattern":    NewStringProperty("Optional custom pipeline pattern name"),
+			"custom":     NewBooleanProperty("Optional: trigger a custom pipeline (default: false)"),
+		}, []string{"repository"}),
+	}
+}
