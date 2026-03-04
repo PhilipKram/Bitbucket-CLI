@@ -1,0 +1,248 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+)
+
+// ToolHandler is a function that executes a tool with the given arguments.
+// It returns content to be included in the tool call result, or an error.
+type ToolHandler func(ctx context.Context, args map[string]interface{}) ([]Content, error)
+
+// RegisteredTool combines a tool definition with its handler function.
+type RegisteredTool struct {
+	Tool    Tool
+	Handler ToolHandler
+}
+
+// ToolRegistry manages the collection of available MCP tools.
+type ToolRegistry struct {
+	mu    sync.RWMutex
+	tools map[string]*RegisteredTool
+}
+
+// NewToolRegistry creates a new empty tool registry.
+func NewToolRegistry() *ToolRegistry {
+	return &ToolRegistry{
+		tools: make(map[string]*RegisteredTool),
+	}
+}
+
+// Register adds a tool to the registry with its handler.
+// If a tool with the same name already exists, it will be replaced.
+func (r *ToolRegistry) Register(tool Tool, handler ToolHandler) error {
+	if tool.Name == "" {
+		return fmt.Errorf("tool name cannot be empty")
+	}
+	if handler == nil {
+		return fmt.Errorf("tool handler cannot be nil")
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.tools[tool.Name] = &RegisteredTool{
+		Tool:    tool,
+		Handler: handler,
+	}
+
+	return nil
+}
+
+// Unregister removes a tool from the registry.
+// Returns true if the tool was found and removed, false otherwise.
+func (r *ToolRegistry) Unregister(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, exists := r.tools[name]; exists {
+		delete(r.tools, name)
+		return true
+	}
+	return false
+}
+
+// Get retrieves a registered tool by name.
+// Returns nil if the tool is not found.
+func (r *ToolRegistry) Get(name string) *RegisteredTool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return r.tools[name]
+}
+
+// List returns all registered tools.
+// The returned slice is a copy and safe to modify.
+func (r *ToolRegistry) List() []Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	tools := make([]Tool, 0, len(r.tools))
+	for _, rt := range r.tools {
+		tools = append(tools, rt.Tool)
+	}
+
+	return tools
+}
+
+// Execute runs a tool by name with the given arguments.
+// Returns a ToolCallResult with the tool's output or error.
+func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string]interface{}) ToolCallResult {
+	rt := r.Get(name)
+	if rt == nil {
+		return ToolCallResult{
+			Content: []Content{
+				NewTextContent(fmt.Sprintf("Tool not found: %s", name)),
+			},
+			IsError: true,
+		}
+	}
+
+	// Execute the tool handler
+	content, err := rt.Handler(ctx, args)
+	if err != nil {
+		return ToolCallResult{
+			Content: []Content{
+				NewTextContent(fmt.Sprintf("Tool execution failed: %v", err)),
+			},
+			IsError: true,
+		}
+	}
+
+	// Return successful result
+	return ToolCallResult{
+		Content: content,
+		IsError: false,
+	}
+}
+
+// Count returns the number of registered tools.
+func (r *ToolRegistry) Count() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	return len(r.tools)
+}
+
+// SetRegistry sets the tool registry for the server.
+// This allows the server to use custom tool definitions.
+func (s *Server) SetRegistry(registry *ToolRegistry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Override the tools/list handler to use the registry
+	s.RegisterHandler("tools/list", func(req *Request) (map[string]interface{}, error) {
+		tools := registry.List()
+		result := ToolsListResult{
+			Tools: tools,
+		}
+
+		resultBytes, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal tools list: %w", err)
+		}
+
+		var resultMap map[string]interface{}
+		if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+		}
+
+		return resultMap, nil
+	})
+
+	// Override the tools/call handler to use the registry
+	s.RegisterHandler("tools/call", func(req *Request) (map[string]interface{}, error) {
+		// Parse tool call params
+		var callReq ToolCallRequest
+		if req.Params != nil {
+			paramsBytes, err := json.Marshal(req.Params)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal params: %w", err)
+			}
+			if err := json.Unmarshal(paramsBytes, &callReq); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tool call request: %w", err)
+			}
+		}
+
+		// Execute the tool
+		result := registry.Execute(s.ctx, callReq.Name, callReq.Arguments)
+
+		// Convert to map
+		resultBytes, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal tool call result: %w", err)
+		}
+
+		var resultMap map[string]interface{}
+		if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+		}
+
+		return resultMap, nil
+	})
+}
+
+// NewJSONSchema creates a JSON schema map for tool input parameters.
+// This is a helper function for creating tool input schemas.
+func NewJSONSchema(schemaType string, properties map[string]interface{}, required []string) map[string]interface{} {
+	schema := map[string]interface{}{
+		"type":       schemaType,
+		"properties": properties,
+	}
+
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+
+	return schema
+}
+
+// NewStringProperty creates a JSON schema property for a string parameter.
+func NewStringProperty(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "string",
+		"description": description,
+	}
+}
+
+// NewNumberProperty creates a JSON schema property for a number parameter.
+func NewNumberProperty(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "number",
+		"description": description,
+	}
+}
+
+// NewBooleanProperty creates a JSON schema property for a boolean parameter.
+func NewBooleanProperty(description string) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "boolean",
+		"description": description,
+	}
+}
+
+// NewObjectProperty creates a JSON schema property for an object parameter.
+func NewObjectProperty(description string, properties map[string]interface{}, required []string) map[string]interface{} {
+	prop := map[string]interface{}{
+		"type":        "object",
+		"description": description,
+		"properties":  properties,
+	}
+
+	if len(required) > 0 {
+		prop["required"] = required
+	}
+
+	return prop
+}
+
+// NewArrayProperty creates a JSON schema property for an array parameter.
+func NewArrayProperty(description string, items map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":        "array",
+		"description": description,
+		"items":       items,
+	}
+}
