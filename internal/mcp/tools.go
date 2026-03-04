@@ -354,3 +354,36 @@ func NewPipelineTriggerTool() Tool {
 		}, []string{"repository"}),
 	}
 }
+
+// RegisterDefaultTools registers all default bb tools with the given registry.
+// This includes PR, Issue, and Pipeline tools.
+func RegisterDefaultTools(registry *ToolRegistry) error {
+	// PR Tools
+	if err := registry.Register(NewPRListTool(), PRListHandler); err != nil {
+		return fmt.Errorf("failed to register pr_list: %w", err)
+	}
+	if err := registry.Register(NewPRViewTool(), PRViewHandler); err != nil {
+		return fmt.Errorf("failed to register pr_view: %w", err)
+	}
+	if err := registry.Register(NewPRCreateTool(), PRCreateHandler); err != nil {
+		return fmt.Errorf("failed to register pr_create: %w", err)
+	}
+
+	// Issue Tools
+	if err := registry.Register(NewIssueListTool(), IssueListHandler); err != nil {
+		return fmt.Errorf("failed to register issue_list: %w", err)
+	}
+	if err := registry.Register(NewIssueCreateTool(), IssueCreateHandler); err != nil {
+		return fmt.Errorf("failed to register issue_create: %w", err)
+	}
+
+	// Pipeline Tools
+	if err := registry.Register(NewPipelineListTool(), PipelineListHandler); err != nil {
+		return fmt.Errorf("failed to register pipeline_list: %w", err)
+	}
+	if err := registry.Register(NewPipelineTriggerTool(), PipelineTriggerHandler); err != nil {
+		return fmt.Errorf("failed to register pipeline_trigger: %w", err)
+	}
+
+	return nil
+}

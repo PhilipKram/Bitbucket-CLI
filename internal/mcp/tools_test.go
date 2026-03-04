@@ -950,3 +950,30 @@ func TestIssueTools_RegistryIntegration(t *testing.T) {
 		}
 	}
 }
+
+func TestRegisterDefaultTools(t *testing.T) {
+	registry := NewToolRegistry()
+
+	err := RegisterDefaultTools(registry)
+	if err != nil {
+		t.Fatalf("RegisterDefaultTools failed: %v", err)
+	}
+
+	// Verify all expected tools are registered
+	expectedTools := []string{
+		"pr_list", "pr_view", "pr_create",
+		"issue_list", "issue_create",
+		"pipeline_list", "pipeline_trigger",
+	}
+
+	if registry.Count() != len(expectedTools) {
+		t.Errorf("expected %d tools, got %d", len(expectedTools), registry.Count())
+	}
+
+	for _, toolName := range expectedTools {
+		rt := registry.Get(toolName)
+		if rt == nil {
+			t.Errorf("expected tool %s to be registered", toolName)
+		}
+	}
+}
