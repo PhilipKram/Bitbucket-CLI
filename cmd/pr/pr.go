@@ -122,12 +122,17 @@ func newCmdList() *cobra.Command {
 				return nil
 			}
 
-			table := output.NewTable("ID", "TITLE", "AUTHOR", "SOURCE", "DEST", "STATE")
+			table := output.NewTable("ID", "TITLE", "AUTHOR", "REVIEWERS", "SOURCE", "DEST", "STATE")
 			for _, pr := range prs {
+				reviewerNames := make([]string, len(pr.Reviewers))
+				for i, r := range pr.Reviewers {
+					reviewerNames[i] = r.DisplayName
+				}
 				table.AddRow(
 					fmt.Sprintf("#%d", pr.ID),
 					output.Truncate(pr.Title, 50),
 					pr.Author.DisplayName,
+					output.Truncate(strings.Join(reviewerNames, ", "), 50),
 					pr.Source.Branch.Name,
 					pr.Destination.Branch.Name,
 					pr.State,
