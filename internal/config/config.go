@@ -23,9 +23,10 @@ var (
 	cachedErr error
 )
 
-// resetConfigDirCache resets the cached config directory. This is used in tests
+// ResetConfigDirCache resets the cached config directory. This is used in tests
 // to ensure each test gets its own config directory based on its temp HOME.
-func resetConfigDirCache() {
+// Exported so tests in other packages can reset the cache when needed.
+func ResetConfigDirCache() {
 	once = sync.Once{}
 	cachedDir = ""
 	cachedErr = nil

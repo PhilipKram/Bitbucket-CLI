@@ -701,6 +701,7 @@ func TestClient_TokenRefresh_Unauthorized(t *testing.T) {
 	// Ensure token persistence during refresh writes to an isolated temp directory.
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	config.ResetConfigDirCache()
 
 	var apiCallCount int32
 	var tokenCallCount int32
@@ -1102,6 +1103,7 @@ func TestClient_Delete_WithBody(t *testing.T) {
 func TestClient_TokenRefresh_WithOAuthConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	config.ResetConfigDirCache()
 
 	var apiCallCount int32
 	var tokenCallCount int32
@@ -1545,5 +1547,301 @@ func TestClient_PostForm_WithBitbucketAPI(t *testing.T) {
 	}
 	if !result["ok"] {
 		t.Error("expected ok=true")
+	}
+}
+
+// TestClient_TransportDefaults verifies default transport configuration
+func TestClient_TransportDefaults(t *testing.T) {
+	// Clear all transport-related env vars to ensure defaults
+	t.Setenv("BB_HTTP_MAX_IDLE_CONNS", "")
+	t.Setenv("BB_HTTP_MAX_IDLE_CONNS_PER_HOST", "")
+	t.Setenv("BB_HTTP_IDLE_CONN_TIMEOUT", "")
+
+	// Create a minimal config/token for testing
+	cfg := &config.Config{
+		OAuthKey:    "test-key",
+		OAuthSecret: "test-secret",
+	}
+	token := &config.TokenData{
+		AccessToken:  "test-token",
+		RefreshToken: "test-refresh",
+	}
+
+	// Save config and token so NewClient can load them
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+	if err := config.SaveToken(token); err != nil {
+		t.Fatalf("failed to save token: %v", err)
+	}
+
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error: %v", err)
+	}
+
+	transport, ok := client.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.httpClient.Transport)
+	}
+
+	// Verify default values
+	if transport.MaxIdleConns != 100 {
+		t.Errorf("MaxIdleConns = %d, want 100", transport.MaxIdleConns)
+	}
+	if transport.MaxIdleConnsPerHost != 10 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 10", transport.MaxIdleConnsPerHost)
+	}
+	if transport.IdleConnTimeout != 90*time.Second {
+		t.Errorf("IdleConnTimeout = %v, want 90s", transport.IdleConnTimeout)
+	}
+}
+
+// TestClient_TransportCustomValues verifies custom transport configuration via env vars
+func TestClient_TransportCustomValues(t *testing.T) {
+	tests := []struct {
+		name                    string
+		maxIdleConns            string
+		maxIdleConnsPerHost     string
+		idleConnTimeout         string
+		expectedMaxIdle         int
+		expectedMaxIdlePerHost  int
+		expectedIdleConnTimeout time.Duration
+	}{
+		{
+			name:                    "all custom values",
+			maxIdleConns:            "200",
+			maxIdleConnsPerHost:     "20",
+			idleConnTimeout:         "120",
+			expectedMaxIdle:         200,
+			expectedMaxIdlePerHost:  20,
+			expectedIdleConnTimeout: 120 * time.Second,
+		},
+		{
+			name:                    "only max idle conns custom",
+			maxIdleConns:            "50",
+			maxIdleConnsPerHost:     "",
+			idleConnTimeout:         "",
+			expectedMaxIdle:         50,
+			expectedMaxIdlePerHost:  10,
+			expectedIdleConnTimeout: 90 * time.Second,
+		},
+		{
+			name:                    "only max idle per host custom",
+			maxIdleConns:            "",
+			maxIdleConnsPerHost:     "5",
+			idleConnTimeout:         "",
+			expectedMaxIdle:         100,
+			expectedMaxIdlePerHost:  5,
+			expectedIdleConnTimeout: 90 * time.Second,
+		},
+		{
+			name:                    "only idle timeout custom",
+			maxIdleConns:            "",
+			maxIdleConnsPerHost:     "",
+			idleConnTimeout:         "60",
+			expectedMaxIdle:         100,
+			expectedMaxIdlePerHost:  10,
+			expectedIdleConnTimeout: 60 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.maxIdleConns != "" {
+				t.Setenv("BB_HTTP_MAX_IDLE_CONNS", tt.maxIdleConns)
+			}
+			if tt.maxIdleConnsPerHost != "" {
+				t.Setenv("BB_HTTP_MAX_IDLE_CONNS_PER_HOST", tt.maxIdleConnsPerHost)
+			}
+			if tt.idleConnTimeout != "" {
+				t.Setenv("BB_HTTP_IDLE_CONN_TIMEOUT", tt.idleConnTimeout)
+			}
+
+			// Create a minimal config/token for testing
+			cfg := &config.Config{
+				OAuthKey:    "test-key",
+				OAuthSecret: "test-secret",
+			}
+			token := &config.TokenData{
+				AccessToken:  "test-token",
+				RefreshToken: "test-refresh",
+			}
+
+			// Save config and token so NewClient can load them
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", tmpDir)
+			config.ResetConfigDirCache()
+			if err := config.SaveConfig(cfg); err != nil {
+				t.Fatalf("failed to save config: %v", err)
+			}
+			if err := config.SaveToken(token); err != nil {
+				t.Fatalf("failed to save token: %v", err)
+			}
+
+			client, err := NewClient()
+			if err != nil {
+				t.Fatalf("NewClient() error: %v", err)
+			}
+
+			transport, ok := client.httpClient.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("expected *http.Transport, got %T", client.httpClient.Transport)
+			}
+
+			if transport.MaxIdleConns != tt.expectedMaxIdle {
+				t.Errorf("MaxIdleConns = %d, want %d", transport.MaxIdleConns, tt.expectedMaxIdle)
+			}
+			if transport.MaxIdleConnsPerHost != tt.expectedMaxIdlePerHost {
+				t.Errorf("MaxIdleConnsPerHost = %d, want %d", transport.MaxIdleConnsPerHost, tt.expectedMaxIdlePerHost)
+			}
+			if transport.IdleConnTimeout != tt.expectedIdleConnTimeout {
+				t.Errorf("IdleConnTimeout = %v, want %v", transport.IdleConnTimeout, tt.expectedIdleConnTimeout)
+			}
+		})
+	}
+}
+
+// TestClient_TransportInvalidValues verifies fallback to defaults for invalid env vars
+func TestClient_TransportInvalidValues(t *testing.T) {
+	tests := []struct {
+		name                string
+		maxIdleConns        string
+		maxIdleConnsPerHost string
+		idleConnTimeout     string
+	}{
+		{
+			name:                "non-numeric values",
+			maxIdleConns:        "abc",
+			maxIdleConnsPerHost: "xyz",
+			idleConnTimeout:     "invalid",
+		},
+		{
+			name:                "negative values",
+			maxIdleConns:        "-10",
+			maxIdleConnsPerHost: "-5",
+			idleConnTimeout:     "-30",
+		},
+		{
+			name:                "zero values",
+			maxIdleConns:        "0",
+			maxIdleConnsPerHost: "0",
+			idleConnTimeout:     "0",
+		},
+		{
+			name:                "mixed invalid and valid",
+			maxIdleConns:        "abc",
+			maxIdleConnsPerHost: "20",
+			idleConnTimeout:     "invalid",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("BB_HTTP_MAX_IDLE_CONNS", tt.maxIdleConns)
+			t.Setenv("BB_HTTP_MAX_IDLE_CONNS_PER_HOST", tt.maxIdleConnsPerHost)
+			t.Setenv("BB_HTTP_IDLE_CONN_TIMEOUT", tt.idleConnTimeout)
+
+			// Create a minimal config/token for testing
+			cfg := &config.Config{
+				OAuthKey:    "test-key",
+				OAuthSecret: "test-secret",
+			}
+			token := &config.TokenData{
+				AccessToken:  "test-token",
+				RefreshToken: "test-refresh",
+			}
+
+			// Save config and token so NewClient can load them
+			tmpDir := t.TempDir()
+			t.Setenv("HOME", tmpDir)
+			config.ResetConfigDirCache()
+			if err := config.SaveConfig(cfg); err != nil {
+				t.Fatalf("failed to save config: %v", err)
+			}
+			if err := config.SaveToken(token); err != nil {
+				t.Fatalf("failed to save token: %v", err)
+			}
+
+			client, err := NewClient()
+			if err != nil {
+				t.Fatalf("NewClient() error: %v", err)
+			}
+
+			transport, ok := client.httpClient.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("expected *http.Transport, got %T", client.httpClient.Transport)
+			}
+
+			// Verify defaults are used for invalid values
+			expectedMaxIdle := 100
+			expectedMaxIdlePerHost := 10
+			expectedIdleTimeout := 90 * time.Second
+
+			// Special case: if maxIdleConnsPerHost was valid in the "mixed" test
+			if tt.name == "mixed invalid and valid" && tt.maxIdleConnsPerHost == "20" {
+				expectedMaxIdlePerHost = 20
+			}
+
+			if transport.MaxIdleConns != expectedMaxIdle {
+				t.Errorf("MaxIdleConns = %d, want %d (default)", transport.MaxIdleConns, expectedMaxIdle)
+			}
+			if transport.MaxIdleConnsPerHost != expectedMaxIdlePerHost {
+				t.Errorf("MaxIdleConnsPerHost = %d, want %d", transport.MaxIdleConnsPerHost, expectedMaxIdlePerHost)
+			}
+			if transport.IdleConnTimeout != expectedIdleTimeout {
+				t.Errorf("IdleConnTimeout = %v, want %v (default)", transport.IdleConnTimeout, expectedIdleTimeout)
+			}
+		})
+	}
+}
+
+// TestClient_TransportAttachedToHTTPClient verifies transport is properly attached
+func TestClient_TransportAttachedToHTTPClient(t *testing.T) {
+	t.Setenv("BB_HTTP_MAX_IDLE_CONNS", "150")
+
+	// Create a minimal config/token for testing
+	cfg := &config.Config{
+		OAuthKey:    "test-key",
+		OAuthSecret: "test-secret",
+	}
+	token := &config.TokenData{
+		AccessToken:  "test-token",
+		RefreshToken: "test-refresh",
+	}
+
+	// Save config and token so NewClient can load them
+	tmpDir := t.TempDir()
+	t.Setenv("HOME", tmpDir)
+	config.ResetConfigDirCache()
+	if err := config.SaveConfig(cfg); err != nil {
+		t.Fatalf("failed to save config: %v", err)
+	}
+	if err := config.SaveToken(token); err != nil {
+		t.Fatalf("failed to save token: %v", err)
+	}
+
+	client, err := NewClient()
+	if err != nil {
+		t.Fatalf("NewClient() error: %v", err)
+	}
+
+	// Verify transport is not nil
+	if client.httpClient.Transport == nil {
+		t.Fatal("expected non-nil Transport")
+	}
+
+	// Verify it's the correct type
+	transport, ok := client.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.httpClient.Transport)
+	}
+
+	// Verify the configured value is applied
+	if transport.MaxIdleConns != 150 {
+		t.Errorf("MaxIdleConns = %d, want 150", transport.MaxIdleConns)
 	}
 }
