@@ -132,7 +132,7 @@ func newCmdList() *cobra.Command {
 					fmt.Sprintf("#%d", pr.ID),
 					output.Truncate(pr.Title, 50),
 					pr.Author.DisplayName,
-					strings.Join(reviewerNames, ", "),
+					output.Truncate(strings.Join(reviewerNames, ", "), 50),
 					pr.Source.Branch.Name,
 					pr.Destination.Branch.Name,
 					pr.State,
