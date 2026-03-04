@@ -12,6 +12,7 @@ import (
 	configCmd "github.com/PhilipKram/bitbucket-cli/cmd/config"
 	issueCmd "github.com/PhilipKram/bitbucket-cli/cmd/issue"
 	"github.com/PhilipKram/bitbucket-cli/internal/update"
+	mcpCmd "github.com/PhilipKram/bitbucket-cli/cmd/mcp"
 	pipelineCmd "github.com/PhilipKram/bitbucket-cli/cmd/pipeline"
 	prCmd "github.com/PhilipKram/bitbucket-cli/cmd/pr"
 	repoCmd "github.com/PhilipKram/bitbucket-cli/cmd/repo"
@@ -76,5 +77,6 @@ func init() {
 	rootCmd.AddCommand(userCmd.NewCmdUser())
 	rootCmd.AddCommand(configCmd.NewCmdConfig())
 	rootCmd.AddCommand(completionCmd.NewCmdCompletion())
+	rootCmd.AddCommand(mcpCmd.NewCmdMCP())
 	rootCmd.AddCommand(newCmdUpgrade())
 }
