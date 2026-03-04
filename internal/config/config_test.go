@@ -166,3 +166,40 @@ func TestClearToken_NoFile(t *testing.T) {
 		t.Fatalf("ClearToken() should not error when no file: %v", err)
 	}
 }
+
+func TestConfigDir_Caching(t *testing.T) {
+	tmpDir := t.TempDir()
+	setTempHome(t, tmpDir)
+	resetConfigDirCache()
+
+	// First call should compute and cache the directory
+	dir1, err1 := ConfigDir()
+	if err1 != nil {
+		t.Fatalf("First ConfigDir() call error: %v", err1)
+	}
+
+	// Subsequent calls should return the same cached result
+	dir2, err2 := ConfigDir()
+	if err2 != nil {
+		t.Fatalf("Second ConfigDir() call error: %v", err2)
+	}
+
+	dir3, err3 := ConfigDir()
+	if err3 != nil {
+		t.Fatalf("Third ConfigDir() call error: %v", err3)
+	}
+
+	// All calls should return the exact same values
+	if dir1 != dir2 || dir1 != dir3 {
+		t.Errorf("ConfigDir() returned different values: %q, %q, %q", dir1, dir2, dir3)
+	}
+
+	// Verify the directory exists and was created
+	info, err := os.Stat(dir1)
+	if err != nil {
+		t.Fatalf("Cached directory does not exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Errorf("Cached path is not a directory")
+	}
+}
