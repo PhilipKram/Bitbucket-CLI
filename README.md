@@ -143,20 +143,21 @@ bb auth logout       # Remove stored credentials
 
 ## Commands
 
-| Command       | Description                        |
-|---------------|------------------------------------|
-| `bb auth`     | Authenticate with Bitbucket        |
-| `bb repo`     | Manage repositories                |
-| `bb pr`       | Manage pull requests               |
-| `bb pipeline` | Manage pipelines (CI/CD)           |
-| `bb issue`    | Manage issues (issue tracker)      |
-| `bb branch`   | Manage branches and tags           |
-| `bb snippet`  | Manage snippets                    |
-| `bb workspace`| Manage workspaces and projects     |
-| `bb user`     | Manage user account and settings   |
-| `bb config`   | Manage CLI configuration           |
-| `bb mcp`      | Model Context Protocol server      |
-| `bb upgrade`  | Self-update to the latest version  |
+| Command         | Description                        |
+|-----------------|------------------------------------|
+| `bb auth`       | Authenticate with Bitbucket        |
+| `bb repo`       | Manage repositories                |
+| `bb pr`         | Manage pull requests               |
+| `bb pipeline`   | Manage pipelines (CI/CD)           |
+| `bb issue`      | Manage issues (issue tracker)      |
+| `bb branch`     | Manage branches and tags           |
+| `bb snippet`    | Manage snippets                    |
+| `bb workspace`  | Manage workspaces and projects     |
+| `bb user`       | Manage user account and settings   |
+| `bb config`     | Manage CLI configuration           |
+| `bb completion` | Generate shell completion scripts  |
+| `bb mcp`        | Model Context Protocol server      |
+| `bb upgrade`    | Self-update to the latest version  |
 
 ## MCP (Model Context Protocol)
 
@@ -206,8 +207,12 @@ bb pr list myworkspace/myrepo
 bb pr list myworkspace/myrepo --state OPEN --json
 bb pr view myworkspace/myrepo 42
 bb pr create myworkspace/myrepo --title "Feature" --source feature-branch
+bb pr create myworkspace/myrepo --title "Feature" --source dev --no-default-reviewers
+bb pr edit myworkspace/myrepo 42 --title "Updated title"
 bb pr merge myworkspace/myrepo 42 --strategy squash
 bb pr approve myworkspace/myrepo 42
+bb pr unapprove myworkspace/myrepo 42
+bb pr decline myworkspace/myrepo 42
 bb pr comment myworkspace/myrepo 42 --body "Looks good!"
 bb pr comment myworkspace/myrepo 42 --body "Fix this" --file src/main.go --line 42
 bb pr comments myworkspace/myrepo 42
@@ -215,7 +220,7 @@ bb pr diff myworkspace/myrepo 42
 bb pr activity myworkspace/myrepo 42
 ```
 
-The `bb pr comment` command supports inline comments on specific files and lines in a PR diff using `--file/-f` and `--line/-l` flags. Both flags must be provided together.
+`bb pr create` automatically fetches and adds the repository's default reviewers. Use `--no-default-reviewers` to skip this. The `bb pr comment` command supports inline comments on specific files and lines using `--file/-f` and `--line/-l` flags (both must be provided together). The `bb pr list` output includes a reviewers column.
 
 ### Repositories
 
@@ -223,10 +228,16 @@ The `bb pr comment` command supports inline comments on specific files and lines
 bb repo list myworkspace
 bb repo view myworkspace/myrepo
 bb repo create myworkspace --name myrepo --private
+bb repo clone myworkspace/myrepo
+bb repo clone myworkspace/myrepo --protocol ssh
+bb repo clone myworkspace/myrepo ./my-directory
 bb repo commits myworkspace/myrepo
 bb repo diff myworkspace/myrepo main..feature
 bb repo fork myworkspace/myrepo
+bb repo delete myworkspace/myrepo
 ```
+
+The `bb repo clone` command supports HTTPS (default, with automatic token injection) and SSH protocols via `--protocol/-p`. It automatically sets `bb.workspace` in the cloned repo's local git config.
 
 ### Pipelines
 
@@ -234,10 +245,15 @@ bb repo fork myworkspace/myrepo
 bb pipeline list myworkspace/myrepo
 bb pipeline view myworkspace/myrepo <uuid>
 bb pipeline run myworkspace/myrepo --branch main
+bb pipeline run myworkspace/myrepo --custom --pattern deploy
 bb pipeline stop myworkspace/myrepo <uuid>
 bb pipeline steps myworkspace/myrepo <uuid>
 bb pipeline log myworkspace/myrepo <pipeline-uuid> <step-uuid>
+bb pipeline watch myworkspace/myrepo                    # Watch latest pipeline
+bb pipeline watch myworkspace/myrepo --build 187        # Watch specific build
 ```
+
+The `bb pipeline watch` command monitors pipeline status in real-time with colored output and auto-exits with an appropriate exit code when the pipeline completes. Use `--interval/-i` to set the polling interval.
 
 ### Branches and tags
 
@@ -247,6 +263,8 @@ bb branch create myworkspace/myrepo --name feature --target main
 bb branch delete myworkspace/myrepo feature
 bb branch tags myworkspace/myrepo
 bb branch create-tag myworkspace/myrepo --name v1.0 --target main
+bb branch tag-delete myworkspace/myrepo v1.0
+bb branch restrictions myworkspace/myrepo
 ```
 
 ### Issues
@@ -255,7 +273,42 @@ bb branch create-tag myworkspace/myrepo --name v1.0 --target main
 bb issue list myworkspace/myrepo
 bb issue view myworkspace/myrepo 1
 bb issue create myworkspace/myrepo --title "Bug" --priority critical
+bb issue edit myworkspace/myrepo 1 --title "Updated title"
+bb issue delete myworkspace/myrepo 1
 bb issue comment myworkspace/myrepo 1 --body "Fixed in #42"
+bb issue comments myworkspace/myrepo 1
+bb issue vote myworkspace/myrepo 1
+bb issue watch myworkspace/myrepo 1
+```
+
+### Workspaces
+
+```sh
+bb workspace list
+bb workspace view myworkspace
+bb workspace members myworkspace
+bb workspace projects myworkspace
+bb workspace project-create myworkspace --name "My Project"
+bb workspace permissions myworkspace
+```
+
+### Snippets
+
+```sh
+bb snippet list myworkspace
+bb snippet view myworkspace <snippet-id>
+bb snippet create myworkspace --title "My Snippet" --file script.sh
+bb snippet delete myworkspace <snippet-id>
+```
+
+### User
+
+```sh
+bb user me                          # Show current authenticated user
+bb user view <username>             # View a user's profile
+bb user emails                      # List your email addresses
+bb user ssh-keys                    # List your SSH keys
+bb user ssh-key-add --label "My Key" --key "ssh-rsa ..."
 ```
 
 ### Upgrading
@@ -270,9 +323,9 @@ If you installed via Homebrew or `go install`, `bb upgrade` will suggest the app
 ## Configuration
 
 ```sh
-bb config show                              # View current config
-bb config set-workspace myworkspace         # Set default workspace
-bb config set-format json                   # Set default output format (table, json)
+bb config view                                 # View current config
+bb config set-default-workspace myworkspace    # Set default workspace
+bb config set-format json                      # Set default output format (table, json)
 ```
 
 Configuration and credentials are stored in `$XDG_CONFIG_HOME/bitbucket-cli/` (or `~/.config/bitbucket-cli/` on Linux, `~/Library/Application Support/bitbucket-cli/` on macOS, `%AppData%/bitbucket-cli/` on Windows).
@@ -304,6 +357,8 @@ The check adds no latency to commands and is skipped when output is piped.
 | Variable           | Description                                      |
 |--------------------|--------------------------------------------------|
 | `BB_HTTP_TIMEOUT`  | HTTP client timeout in seconds (default: 30)     |
+| `VISUAL`           | Preferred editor for composing comments           |
+| `EDITOR`           | Fallback editor if `VISUAL` is not set            |
 
 ## Development
 
