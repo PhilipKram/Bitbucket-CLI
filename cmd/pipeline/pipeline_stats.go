@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -95,9 +96,16 @@ func fetchPipelinesInWindow(client *api.Client, repo, branch string, cutoff time
 	var all []Pipeline
 	page := 1
 
+	// repo is "workspace/repo-slug"; split and escape each segment separately
+	repoParts := strings.SplitN(repo, "/", 2)
+	if len(repoParts) != 2 {
+		return nil, fmt.Errorf("invalid repository format %q, expected workspace/repo-slug", repo)
+	}
+	escapedRepo := url.PathEscape(repoParts[0]) + "/" + url.PathEscape(repoParts[1])
+
 	for {
 		path := fmt.Sprintf("/repositories/%s/pipelines/?pagelen=100&page=%d&sort=-created_on",
-			url.PathEscape(repo), page)
+			escapedRepo, page)
 		data, err := client.Get(path)
 		if err != nil {
 			return nil, err

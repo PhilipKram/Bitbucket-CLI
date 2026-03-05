@@ -53,11 +53,9 @@ Use --field to construct a JSON body from key=value pairs:
 			}
 
 			// Validate headers
-			extraHeaders, err := parseHeaders(headers)
-			if err != nil {
-				return err
+			if len(headers) > 0 {
+				return fmt.Errorf("--header is not yet supported: custom headers cannot be applied to requests")
 			}
-			_ = extraHeaders // Headers noted but not used with current client methods
 
 			client, err := internalapi.NewClient()
 			if err != nil {

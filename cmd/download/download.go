@@ -176,7 +176,7 @@ func newCmdGet() *cobra.Command {
 				return err
 			}
 
-			// List downloads to find the file's download link
+			// Search through paginated downloads to find the file
 			path := fmt.Sprintf("/repositories/%s/%s/downloads?pagelen=100",
 				url.PathEscape(ws), url.PathEscape(repo))
 
@@ -185,23 +185,42 @@ func newCmdGet() *cobra.Command {
 				return err
 			}
 
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
-			}
-
-			var downloads []Download
-			if err := json.Unmarshal(paginated.Values, &downloads); err != nil {
-				return err
-			}
-
 			var found *Download
-			for i := range downloads {
-				if downloads[i].Name == filename {
-					found = &downloads[i]
+			currentData := data
+
+			for {
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(currentData, &paginated); err != nil {
+					return err
+				}
+
+				var downloads []Download
+				if err := json.Unmarshal(paginated.Values, &downloads); err != nil {
+					return err
+				}
+
+				for i := range downloads {
+					if downloads[i].Name == filename {
+						found = &downloads[i]
+						break
+					}
+				}
+
+				if found != nil {
 					break
 				}
+
+				if paginated.Next == "" {
+					break
+				}
+
+				nextData, err := client.GetRaw(paginated.Next)
+				if err != nil {
+					return err
+				}
+				currentData = nextData
 			}
+
 			if found == nil {
 				return fmt.Errorf("file %q not found in downloads", filename)
 			}

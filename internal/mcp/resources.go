@@ -12,7 +12,7 @@ import (
 func RegisterDefaultResources(s *Server) {
 	// README resource
 	s.AddResourceTemplate(ResourceTemplate{
-		URITemplate: "bitbucket:///{repo}/README.md",
+		URITemplate: "bitbucket:///{workspace}/{repo}/README.md",
 		Name:        "readme",
 		Description: "Read the README.md file from a Bitbucket repository",
 		MimeType:    "text/markdown",
@@ -20,7 +20,7 @@ func RegisterDefaultResources(s *Server) {
 
 	// Pipeline step log resource
 	s.AddResourceTemplate(ResourceTemplate{
-		URITemplate: "bitbucket:///{repo}/pipeline/{uuid}/step/{step_uuid}/log",
+		URITemplate: "bitbucket:///{workspace}/{repo}/pipeline/{uuid}/step/{step_uuid}/log",
 		Name:        "pipeline-step-log",
 		Description: "Read the log output of a pipeline step",
 		MimeType:    "text/plain",
@@ -28,7 +28,7 @@ func RegisterDefaultResources(s *Server) {
 
 	// PR diff resource
 	s.AddResourceTemplate(ResourceTemplate{
-		URITemplate: "bitbucket:///{repo}/pr/{id}/diff",
+		URITemplate: "bitbucket:///{workspace}/{repo}/pr/{id}/diff",
 		Name:        "pr-diff",
 		Description: "Read the diff of a pull request",
 		MimeType:    "text/plain",

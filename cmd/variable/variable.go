@@ -58,9 +58,9 @@ func listVariables(client *api.Client, repo string) ([]Variable, error) {
 
 // findVariableByKey searches the variable list for a matching key.
 func findVariableByKey(variables []Variable, key string) (*Variable, error) {
-	for _, v := range variables {
-		if v.Key == key {
-			return &v, nil
+	for i := range variables {
+		if variables[i].Key == key {
+			return &variables[i], nil
 		}
 	}
 	return nil, fmt.Errorf("variable with key %q not found", key)

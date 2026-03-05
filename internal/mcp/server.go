@@ -358,8 +358,17 @@ func (s *Server) handleResourcesList(req *Request) (map[string]interface{}, erro
 
 // handleResourcesRead handles the resources/read request.
 func (s *Server) handleResourcesRead(req *Request) (map[string]interface{}, error) {
-	uri, _ := req.Params["uri"].(string)
-	if uri == "" {
+	if req.Params == nil {
+		return nil, fmt.Errorf("missing params for resources/read request")
+	}
+
+	rawURI, ok := req.Params["uri"]
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter: uri")
+	}
+
+	uri, ok := rawURI.(string)
+	if !ok || uri == "" {
 		return nil, fmt.Errorf("missing required parameter: uri")
 	}
 
@@ -388,16 +397,70 @@ func (s *Server) handleResourcesRead(req *Request) (map[string]interface{}, erro
 	return nil, fmt.Errorf("no resource handler found for URI: %s", uri)
 }
 
-// matchesTemplate checks if a URI matches a URI template pattern.
-// It performs a simple prefix-based match by comparing the static parts of the template.
+// matchesTemplate checks if a URI matches a URI template pattern by comparing
+// all static segments between placeholders against the corresponding URI segments.
 func matchesTemplate(template, uri string) bool {
-	// Simple matching: split template on '{' tokens and check that the URI
-	// contains the static prefix portions in order.
-	parts := strings.SplitN(template, "{", 2)
-	if len(parts) == 0 {
-		return template == uri
+	// Split template into static and placeholder parts.
+	// E.g., "bitbucket:///{workspace}/{repo}/pr/{id}/diff" produces
+	// static segments: ["bitbucket:///", "/", "/pr/", "/diff"]
+	// We check that the URI matches all static segments in order,
+	// with any non-empty string allowed for placeholder positions.
+	tIdx := 0
+	uIdx := 0
+
+	for tIdx < len(template) {
+		if template[tIdx] == '{' {
+			// Skip past the placeholder in the template
+			end := strings.IndexByte(template[tIdx:], '}')
+			if end == -1 {
+				return false
+			}
+			tIdx += end + 1
+
+			// In the URI, consume characters until the next static segment (or end)
+			if tIdx < len(template) {
+				// Find the next static segment in the template
+				nextBrace := strings.IndexByte(template[tIdx:], '{')
+				var nextStatic string
+				if nextBrace == -1 {
+					nextStatic = template[tIdx:]
+				} else {
+					nextStatic = template[tIdx : tIdx+nextBrace]
+				}
+				if nextStatic != "" {
+					pos := strings.Index(uri[uIdx:], nextStatic)
+					if pos == -1 || pos == 0 {
+						return false // placeholder must match at least one char
+					}
+					uIdx += pos
+				}
+			} else {
+				// Placeholder is at the end; URI must have at least one more char
+				if uIdx >= len(uri) {
+					return false
+				}
+				uIdx = len(uri)
+			}
+		} else {
+			// Static segment: find next placeholder (or end)
+			nextBrace := strings.IndexByte(template[tIdx:], '{')
+			var staticPart string
+			if nextBrace == -1 {
+				staticPart = template[tIdx:]
+				tIdx = len(template)
+			} else {
+				staticPart = template[tIdx : tIdx+nextBrace]
+				tIdx += nextBrace
+			}
+
+			if !strings.HasPrefix(uri[uIdx:], staticPart) {
+				return false
+			}
+			uIdx += len(staticPart)
+		}
 	}
-	return strings.HasPrefix(uri, parts[0])
+
+	return uIdx == len(uri)
 }
 
 // handlePromptsList handles the prompts/list request.
@@ -426,8 +489,17 @@ func (s *Server) handlePromptsList(req *Request) (map[string]interface{}, error)
 
 // handlePromptsGet handles the prompts/get request.
 func (s *Server) handlePromptsGet(req *Request) (map[string]interface{}, error) {
-	name, _ := req.Params["name"].(string)
-	if name == "" {
+	if req == nil || req.Params == nil {
+		return nil, fmt.Errorf("missing parameters")
+	}
+
+	rawName, ok := req.Params["name"]
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter: name")
+	}
+
+	name, ok := rawName.(string)
+	if !ok || name == "" {
 		return nil, fmt.Errorf("missing required parameter: name")
 	}
 
