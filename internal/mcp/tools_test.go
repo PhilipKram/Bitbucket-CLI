@@ -564,6 +564,66 @@ func TestPRTools_ToolDefinitions(t *testing.T) {
 	if createTool.InputSchema == nil {
 		t.Error("expected input schema to be set")
 	}
+
+	// Test PR Approve tool definition
+	approveTool := NewPRApproveTool()
+	if approveTool.Name != "pr_approve" {
+		t.Errorf("expected name 'pr_approve', got '%s'", approveTool.Name)
+	}
+	if approveTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if approveTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR Merge tool definition
+	mergeTool := NewPRMergeTool()
+	if mergeTool.Name != "pr_merge" {
+		t.Errorf("expected name 'pr_merge', got '%s'", mergeTool.Name)
+	}
+	if mergeTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if mergeTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR Decline tool definition
+	declineTool := NewPRDeclineTool()
+	if declineTool.Name != "pr_decline" {
+		t.Errorf("expected name 'pr_decline', got '%s'", declineTool.Name)
+	}
+	if declineTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if declineTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR Diff tool definition
+	diffTool := NewPRDiffTool()
+	if diffTool.Name != "pr_diff" {
+		t.Errorf("expected name 'pr_diff', got '%s'", diffTool.Name)
+	}
+	if diffTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if diffTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
+
+	// Test PR Comment tool definition
+	commentTool := NewPRCommentTool()
+	if commentTool.Name != "pr_comment" {
+		t.Errorf("expected name 'pr_comment', got '%s'", commentTool.Name)
+	}
+	if commentTool.Description == "" {
+		t.Error("expected non-empty description")
+	}
+	if commentTool.InputSchema == nil {
+		t.Error("expected input schema to be set")
+	}
 }
 
 func TestPRTools_HandlerValidation(t *testing.T) {
@@ -644,6 +704,146 @@ func TestPRTools_HandlerValidation(t *testing.T) {
 			t.Errorf("expected error message to mention source, got: %v", err)
 		}
 	})
+
+	// Test PR Approve handler parameter validation
+	t.Run("PRApprove_MissingRepository", func(t *testing.T) {
+		_, err := PRApproveHandler(ctx, map[string]interface{}{
+			"pr_id": "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRApprove_MissingPRID", func(t *testing.T) {
+		_, err := PRApproveHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	// Test PR Merge handler parameter validation
+	t.Run("PRMerge_MissingRepository", func(t *testing.T) {
+		_, err := PRMergeHandler(ctx, map[string]interface{}{
+			"pr_id": "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRMerge_MissingPRID", func(t *testing.T) {
+		_, err := PRMergeHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	// Test PR Decline handler parameter validation
+	t.Run("PRDecline_MissingRepository", func(t *testing.T) {
+		_, err := PRDeclineHandler(ctx, map[string]interface{}{
+			"pr_id": "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRDecline_MissingPRID", func(t *testing.T) {
+		_, err := PRDeclineHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	// Test PR Diff handler parameter validation
+	t.Run("PRDiff_MissingRepository", func(t *testing.T) {
+		_, err := PRDiffHandler(ctx, map[string]interface{}{
+			"pr_id": "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRDiff_MissingPRID", func(t *testing.T) {
+		_, err := PRDiffHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	// Test PR Comment handler parameter validation
+	t.Run("PRComment_MissingRepository", func(t *testing.T) {
+		_, err := PRCommentHandler(ctx, map[string]interface{}{
+			"pr_id":   "1",
+			"content": "test comment",
+		})
+		if err == nil {
+			t.Error("expected error for missing repository parameter")
+		}
+		if !strings.Contains(err.Error(), "repository") {
+			t.Errorf("expected error message to mention repository, got: %v", err)
+		}
+	})
+
+	t.Run("PRComment_MissingPRID", func(t *testing.T) {
+		_, err := PRCommentHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+			"content":    "test comment",
+		})
+		if err == nil {
+			t.Error("expected error for missing pr_id parameter")
+		}
+		if !strings.Contains(err.Error(), "pr_id") {
+			t.Errorf("expected error message to mention pr_id, got: %v", err)
+		}
+	})
+
+	t.Run("PRComment_MissingContent", func(t *testing.T) {
+		_, err := PRCommentHandler(ctx, map[string]interface{}{
+			"repository": "workspace/repo",
+			"pr_id":      "1",
+		})
+		if err == nil {
+			t.Error("expected error for missing content parameter")
+		}
+		if !strings.Contains(err.Error(), "content") {
+			t.Errorf("expected error message to mention content, got: %v", err)
+		}
+	})
 }
 
 func TestPRTools_RegistryIntegration(t *testing.T) {
@@ -665,13 +865,38 @@ func TestPRTools_RegistryIntegration(t *testing.T) {
 		t.Errorf("failed to register pr_create tool: %v", err)
 	}
 
+	err = registry.Register(NewPRApproveTool(), PRApproveHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_approve tool: %v", err)
+	}
+
+	err = registry.Register(NewPRMergeTool(), PRMergeHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_merge tool: %v", err)
+	}
+
+	err = registry.Register(NewPRDeclineTool(), PRDeclineHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_decline tool: %v", err)
+	}
+
+	err = registry.Register(NewPRDiffTool(), PRDiffHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_diff tool: %v", err)
+	}
+
+	err = registry.Register(NewPRCommentTool(), PRCommentHandler)
+	if err != nil {
+		t.Errorf("failed to register pr_comment tool: %v", err)
+	}
+
 	// Verify all tools are registered
-	if registry.Count() != 3 {
-		t.Errorf("expected 3 tools registered, got %d", registry.Count())
+	if registry.Count() != 8 {
+		t.Errorf("expected 8 tools registered, got %d", registry.Count())
 	}
 
 	// Verify each tool can be retrieved
-	tools := []string{"pr_list", "pr_view", "pr_create"}
+	tools := []string{"pr_list", "pr_view", "pr_create", "pr_approve", "pr_merge", "pr_decline", "pr_diff", "pr_comment"}
 	for _, toolName := range tools {
 		rt := registry.Get(toolName)
 		if rt == nil {
@@ -681,8 +906,8 @@ func TestPRTools_RegistryIntegration(t *testing.T) {
 
 	// Verify tools appear in list
 	toolList := registry.List()
-	if len(toolList) != 3 {
-		t.Errorf("expected 3 tools in list, got %d", len(toolList))
+	if len(toolList) != 8 {
+		t.Errorf("expected 8 tools in list, got %d", len(toolList))
 	}
 
 	toolNames := make(map[string]bool)
@@ -719,6 +944,31 @@ func TestToolSchemas(t *testing.T) {
 			name:     "pr_create",
 			tool:     NewPRCreateTool(),
 			required: []string{"repository", "title", "source"},
+		},
+		{
+			name:     "pr_approve",
+			tool:     NewPRApproveTool(),
+			required: []string{"repository", "pr_id"},
+		},
+		{
+			name:     "pr_merge",
+			tool:     NewPRMergeTool(),
+			required: []string{"repository", "pr_id"},
+		},
+		{
+			name:     "pr_decline",
+			tool:     NewPRDeclineTool(),
+			required: []string{"repository", "pr_id"},
+		},
+		{
+			name:     "pr_diff",
+			tool:     NewPRDiffTool(),
+			required: []string{"repository", "pr_id"},
+		},
+		{
+			name:     "pr_comment",
+			tool:     NewPRCommentTool(),
+			required: []string{"repository", "pr_id", "content"},
 		},
 		{
 			name:     "issue_list",
@@ -963,8 +1213,12 @@ func TestRegisterDefaultTools(t *testing.T) {
 	// Verify all expected tools are registered
 	expectedTools := []string{
 		"pr_list", "pr_view", "pr_create",
-		"issue_list", "issue_create",
-		"pipeline_list", "pipeline_trigger",
+		"pr_approve", "pr_merge", "pr_decline", "pr_diff", "pr_comment",
+		"issue_list", "issue_create", "issue_view", "issue_edit", "issue_delete", "issue_comment",
+		"pipeline_list", "pipeline_trigger", "pipeline_view", "pipeline_stop",
+		"repo_list", "repo_view",
+		"snippet_list", "snippet_view",
+		"branch_list",
 	}
 
 	if registry.Count() != len(expectedTools) {

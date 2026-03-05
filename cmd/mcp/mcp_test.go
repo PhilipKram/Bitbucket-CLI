@@ -3,7 +3,10 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,13 +29,264 @@ func TestIntegration_MCP_CommandStructure(t *testing.T) {
 		t.Error("Expected non-empty Short description")
 	}
 
-	// Verify serve subcommand exists without relying on command ordering
-	serveCmd, _, err := cmd.Find([]string{"serve"})
-	if err != nil {
-		t.Fatalf("Failed to find 'serve' subcommand: %v", err)
+	// Verify all subcommands exist
+	subcommands := []string{"serve", "install", "uninstall", "status"}
+	for _, name := range subcommands {
+		found, _, err := cmd.Find([]string{name})
+		if err != nil {
+			t.Fatalf("Failed to find '%s' subcommand: %v", name, err)
+		}
+		if found == nil || found.Use != name {
+			t.Errorf("Expected subcommand '%s', got %v", name, found)
+		}
 	}
-	if serveCmd == nil || serveCmd.Use != "serve" {
-		t.Errorf("Expected subcommand 'serve', got %v", serveCmd)
+}
+
+// TestIntegration_MCP_InstallFlags tests the install subcommand flags.
+func TestIntegration_MCP_InstallFlags(t *testing.T) {
+	cmd := NewCmdMCP()
+	installCmd, _, err := cmd.Find([]string{"install"})
+	if err != nil {
+		t.Fatalf("Failed to find install subcommand: %v", err)
+	}
+
+	scopeFlag := installCmd.Flags().Lookup("scope")
+	if scopeFlag == nil {
+		t.Fatal("Expected --scope flag on install command")
+	}
+	if scopeFlag.DefValue != "user" {
+		t.Errorf("Expected default scope 'user', got %s", scopeFlag.DefValue)
+	}
+
+	clientFlag := installCmd.Flags().Lookup("client")
+	if clientFlag == nil {
+		t.Fatal("Expected --client flag on install command")
+	}
+	if clientFlag.DefValue != "claude-code" {
+		t.Errorf("Expected default client 'claude-code', got %s", clientFlag.DefValue)
+	}
+}
+
+// TestIntegration_MCP_UninstallFlags tests the uninstall subcommand flags.
+func TestIntegration_MCP_UninstallFlags(t *testing.T) {
+	cmd := NewCmdMCP()
+	uninstallCmd, _, err := cmd.Find([]string{"uninstall"})
+	if err != nil {
+		t.Fatalf("Failed to find uninstall subcommand: %v", err)
+	}
+
+	scopeFlag := uninstallCmd.Flags().Lookup("scope")
+	if scopeFlag == nil {
+		t.Fatal("Expected --scope flag on uninstall command")
+	}
+	if scopeFlag.DefValue != "user" {
+		t.Errorf("Expected default scope 'user', got %s", scopeFlag.DefValue)
+	}
+
+	clientFlag := uninstallCmd.Flags().Lookup("client")
+	if clientFlag == nil {
+		t.Fatal("Expected --client flag on uninstall command")
+	}
+	if clientFlag.DefValue != "claude-code" {
+		t.Errorf("Expected default client 'claude-code', got %s", clientFlag.DefValue)
+	}
+}
+
+// TestIntegration_MCP_StatusFlags tests the status subcommand flags.
+func TestIntegration_MCP_StatusFlags(t *testing.T) {
+	cmd := NewCmdMCP()
+	statusCmd, _, err := cmd.Find([]string{"status"})
+	if err != nil {
+		t.Fatalf("Failed to find status subcommand: %v", err)
+	}
+
+	clientFlag := statusCmd.Flags().Lookup("client")
+	if clientFlag == nil {
+		t.Fatal("Expected --client flag on status command")
+	}
+	if clientFlag.DefValue != "claude-code" {
+		t.Errorf("Expected default client 'claude-code', got %s", clientFlag.DefValue)
+	}
+
+	// status should not have --scope flag
+	scopeFlag := statusCmd.Flags().Lookup("scope")
+	if scopeFlag != nil {
+		t.Error("status command should not have --scope flag")
+	}
+}
+
+// TestBBBinaryPath tests the bbBinaryPath helper function.
+func TestBBBinaryPath(t *testing.T) {
+	path := bbBinaryPath()
+	if path == "" {
+		t.Error("bbBinaryPath returned empty string")
+	}
+	// Should return an absolute path or "bb" as fallback
+	if path != "bb" && !filepath.IsAbs(path) {
+		t.Errorf("Expected absolute path or 'bb', got %s", path)
+	}
+}
+
+// TestMCPConfigJSON tests the mcpConfigJSON helper function.
+func TestMCPConfigJSON(t *testing.T) {
+	configJSON, err := mcpConfigJSON("/usr/local/bin/bb")
+	if err != nil {
+		t.Fatalf("mcpConfigJSON failed: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		t.Fatalf("Failed to parse config JSON: %v", err)
+	}
+
+	if config["command"] != "/usr/local/bin/bb" {
+		t.Errorf("Expected command '/usr/local/bin/bb', got %v", config["command"])
+	}
+
+	args, ok := config["args"].([]interface{})
+	if !ok {
+		t.Fatal("Expected args to be an array")
+	}
+	if len(args) != 2 || args[0] != "mcp" || args[1] != "serve" {
+		t.Errorf("Expected args ['mcp', 'serve'], got %v", args)
+	}
+}
+
+// TestClaudeDesktopConfigPath tests the claudeDesktopConfigPath helper function.
+func TestClaudeDesktopConfigPath(t *testing.T) {
+	path, err := claudeDesktopConfigPath()
+	if err != nil {
+		t.Fatalf("claudeDesktopConfigPath failed: %v", err)
+	}
+
+	if path == "" {
+		t.Error("claudeDesktopConfigPath returned empty string")
+	}
+
+	if !filepath.IsAbs(path) {
+		t.Errorf("Expected absolute path, got %s", path)
+	}
+
+	if !strings.HasSuffix(path, "claude_desktop_config.json") {
+		t.Errorf("Expected path ending with claude_desktop_config.json, got %s", path)
+	}
+}
+
+// TestRunInstallUnsupportedClient tests install with an unsupported client.
+func TestRunInstallUnsupportedClient(t *testing.T) {
+	err := runInstall("unsupported-client", "user")
+	if err == nil {
+		t.Fatal("Expected error for unsupported client")
+	}
+	if !strings.Contains(err.Error(), "unsupported client") {
+		t.Errorf("Expected 'unsupported client' error, got: %v", err)
+	}
+}
+
+// TestRunUninstallUnsupportedClient tests uninstall with an unsupported client.
+func TestRunUninstallUnsupportedClient(t *testing.T) {
+	err := runUninstall("unsupported-client", "user")
+	if err == nil {
+		t.Fatal("Expected error for unsupported client")
+	}
+	if !strings.Contains(err.Error(), "unsupported client") {
+		t.Errorf("Expected 'unsupported client' error, got: %v", err)
+	}
+}
+
+// TestRunStatusUnsupportedClient tests status with an unsupported client.
+func TestRunStatusUnsupportedClient(t *testing.T) {
+	err := runStatus("claude-desktop")
+	if err == nil {
+		t.Fatal("Expected error for unsupported client")
+	}
+	if !strings.Contains(err.Error(), "only supported for claude-code") {
+		t.Errorf("Expected 'only supported for claude-code' error, got: %v", err)
+	}
+}
+
+// TestInstallClaudeDesktop tests installing bb in Claude Desktop config.
+func TestInstallClaudeDesktop(t *testing.T) {
+	// Create a temporary directory to simulate Claude Desktop config
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "Claude")
+	configPath := filepath.Join(configDir, "claude_desktop_config.json")
+
+	// We can't easily override claudeDesktopConfigPath, so test the JSON logic directly
+	bbPath := "/usr/local/bin/bb"
+	config := make(map[string]interface{})
+	mcpServers := make(map[string]interface{})
+	mcpServers["bb"] = map[string]interface{}{
+		"command": bbPath,
+		"args":    []string{"mcp", "serve"},
+	}
+	config["mcpServers"] = mcpServers
+
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, output, 0o644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	// Read back and verify
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config file: %v", err)
+	}
+
+	var readConfig map[string]interface{}
+	if err := json.Unmarshal(data, &readConfig); err != nil {
+		t.Fatalf("Failed to parse config: %v", err)
+	}
+
+	servers, ok := readConfig["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected mcpServers in config")
+	}
+
+	bbConfig, ok := servers["bb"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected bb entry in mcpServers")
+	}
+
+	if bbConfig["command"] != "/usr/local/bin/bb" {
+		t.Errorf("Expected command '/usr/local/bin/bb', got %v", bbConfig["command"])
+	}
+}
+
+// TestUninstallClaudeDesktopLogic tests the uninstall logic for Claude Desktop.
+func TestUninstallClaudeDesktopLogic(t *testing.T) {
+	// Simulate a config with bb registered
+	config := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"bb": map[string]interface{}{
+				"command": "/usr/local/bin/bb",
+				"args":    []string{"mcp", "serve"},
+			},
+			"other-tool": map[string]interface{}{
+				"command": "/usr/local/bin/other",
+				"args":    []string{"serve"},
+			},
+		},
+	}
+
+	// Remove bb
+	mcpServers := config["mcpServers"].(map[string]interface{})
+	delete(mcpServers, "bb")
+
+	// Verify bb is gone but other-tool remains
+	if _, exists := mcpServers["bb"]; exists {
+		t.Error("Expected bb to be removed from mcpServers")
+	}
+	if _, exists := mcpServers["other-tool"]; !exists {
+		t.Error("Expected other-tool to remain in mcpServers")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -209,6 +210,35 @@ func (c *Client) Put(path string, jsonBody string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// PostMultipart performs a multipart/form-data POST request, typically used for file uploads.
+func (c *Client) PostMultipart(path, fieldName, fileName string, fileReader io.Reader) ([]byte, error) {
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile(fieldName, fileName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart form: %w", err)
+	}
+	if _, err := io.Copy(part, fileReader); err != nil {
+		return nil, fmt.Errorf("failed to write file to multipart form: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	u := config.BitbucketAPI + path
+	resp, err := c.doRequest("POST", u, &buf, writer.FormDataContentType())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	// Upload often returns 201 Created with no body
+	if resp.StatusCode == http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return body, nil
+	}
 	return handleResponse(resp)
 }
 
