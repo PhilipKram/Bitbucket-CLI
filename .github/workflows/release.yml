@@ -54,3 +54,88 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Notify Microsoft Teams
+        if: success()
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "TEAMS_WEBHOOK_URL not set, skipping Teams notification"
+            exit 0
+          fi
+
+          VERSION="${GITHUB_REF_NAME}"
+          RELEASE_URL="https://github.com/PhilipKram/Bitbucket-CLI/releases/tag/${VERSION}"
+
+          # Extract release notes from the GitHub release (populated by GoReleaser)
+          RELEASE_NOTES=$(gh release view "${VERSION}" --json body --jq '.body' 2>/dev/null || echo "")
+
+          # Convert markdown release notes to plain text for Teams card
+          # Trim to 1000 chars to stay within Adaptive Card limits
+          if [ -n "$RELEASE_NOTES" ]; then
+            CHANGELOG=$(echo "$RELEASE_NOTES" | head -40 | sed 's/"/\\"/g; s/$/\\n/' | tr -d '\n')
+            if [ ${#CHANGELOG} -gt 1000 ]; then
+              CHANGELOG="${CHANGELOG:0:997}..."
+            fi
+          else
+            CHANGELOG="No changelog available. See the release page for details."
+          fi
+
+          # Count release assets
+          ASSET_COUNT=$(gh release view "${VERSION}" --json assets --jq '.assets | length' 2>/dev/null || echo "0")
+
+          curl -s -X POST "$TEAMS_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "type": "message",
+              "attachments": [{
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "content": {
+                  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                  "type": "AdaptiveCard",
+                  "version": "1.4",
+                  "body": [
+                    {
+                      "type": "TextBlock",
+                      "size": "Large",
+                      "weight": "Bolder",
+                      "text": "🚀 bb '"${VERSION}"' released"
+                    },
+                    {
+                      "type": "FactSet",
+                      "facts": [
+                        { "title": "Project", "value": "bb (Bitbucket CLI)" },
+                        { "title": "Version", "value": "'"${VERSION}"'" },
+                        { "title": "Assets", "value": "'"${ASSET_COUNT}"' artifacts" }
+                      ]
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "**Changelog**",
+                      "weight": "Bolder",
+                      "spacing": "Medium"
+                    },
+                    {
+                      "type": "TextBlock",
+                      "text": "'"${CHANGELOG}"'",
+                      "wrap": true,
+                      "maxLines": 20
+                    }
+                  ],
+                  "actions": [
+                    {
+                      "type": "Action.OpenUrl",
+                      "title": "View Release",
+                      "url": "'"${RELEASE_URL}"'"
+                    },
+                    {
+                      "type": "Action.OpenUrl",
+                      "title": "Download",
+                      "url": "'"${RELEASE_URL}"'#assets"
+                    }
+                  ]
+                }
+              }]
+            }'
