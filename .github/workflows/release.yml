@@ -98,10 +98,17 @@ jobs:
                   "version": "1.4",
                   "body": [
                     {
+                      "type": "Image",
+                      "url": "https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/docs/assets/release-banner.svg",
+                      "width": "600px",
+                      "altText": "bb Bitbucket CLI — New Release"
+                    },
+                    {
                       "type": "TextBlock",
                       "size": "Large",
                       "weight": "Bolder",
-                      "text": "🚀 bb '"${VERSION}"' released"
+                      "text": "bb '"${VERSION}"' released",
+                      "spacing": "Medium"
                     },
                     {
                       "type": "FactSet",
