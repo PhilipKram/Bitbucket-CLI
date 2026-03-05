@@ -1,439 +1,1551 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BB CLI - Bitbucket from your terminal</title>
-  <meta name="description" content="A powerful command-line interface for Bitbucket Cloud. Manage repos, pull requests, pipelines, and more without leaving your terminal.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    :root{
-      --bg:#0a0a0f;
-      --surface:#12121a;
-      --surface-2:#1a1a26;
-      --border:#2a2a3a;
-      --text:#e4e4ed;
-      --text-muted:#8888a0;
-      --accent:#4c8dff;
-      --accent-2:#7c5cff;
-      --gradient:linear-gradient(135deg,#4c8dff,#7c5cff);
-      --gradient-subtle:linear-gradient(135deg,rgba(76,141,255,.12),rgba(124,92,255,.12));
-      --radius:12px;
-      --radius-lg:20px;
-    }
-    html{scroll-behavior:smooth}
-    body{
-      font-family:'Inter',system-ui,-apple-system,sans-serif;
-      background:var(--bg);
-      color:var(--text);
-      line-height:1.6;
-      overflow-x:hidden;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bb - Bitbucket CLI</title>
+    <meta name="description" content="Work seamlessly with Bitbucket Cloud from the command line. Manage pull requests, pipelines, issues, and more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================
+           1. DESIGN TOKENS
+           ============================================ */
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #111118;
+            --bg-tertiary: #16161f;
+            --bg-glass: rgba(255, 255, 255, 0.03);
+            --bg-glass-hover: rgba(255, 255, 255, 0.06);
+            --bg-glass-strong: rgba(255, 255, 255, 0.08);
+            --border: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --border-strong: rgba(255, 255, 255, 0.15);
+            --text-primary: #e4e4e7;
+            --text-secondary: #a1a1aa;
+            --text-muted: #71717a;
+            --accent: #2684ff;
+            --accent-dim: rgba(38, 132, 255, 0.12);
+            --accent-glow: rgba(38, 132, 255, 0.25);
+            --green: #34d399;
+            --green-dim: rgba(52, 211, 153, 0.12);
+            --cyan: #22d3ee;
+            --cyan-dim: rgba(34, 211, 238, 0.12);
+            --orange: #fb923c;
+            --orange-dim: rgba(251, 146, 60, 0.12);
+            --pink: #f472b6;
+            --pink-dim: rgba(244, 114, 182, 0.12);
+            --purple: #818cf8;
+            --purple-dim: rgba(129, 140, 248, 0.12);
 
-    /* ---- NAV ---- */
-    nav{
-      position:fixed;top:0;left:0;right:0;z-index:100;
-      backdrop-filter:blur(20px);
-      background:rgba(10,10,15,.75);
-      border-bottom:1px solid var(--border);
-    }
-    .nav-inner{
-      max-width:1120px;margin:0 auto;
-      display:flex;align-items:center;justify-content:space-between;
-      padding:0 24px;height:64px;
-    }
-    .nav-brand{
-      font-weight:800;font-size:1.25rem;
-      background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-      text-decoration:none;
-    }
-    .nav-links{display:flex;gap:28px;list-style:none}
-    .nav-links a{color:var(--text-muted);text-decoration:none;font-size:.9rem;font-weight:500;transition:color .2s}
-    .nav-links a:hover{color:var(--text)}
-    .nav-cta{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:8px 18px;border-radius:8px;font-size:.85rem;font-weight:600;
-      background:var(--gradient);color:#fff;text-decoration:none;
-      transition:opacity .2s;
-    }
-    .nav-cta:hover{opacity:.85}
+            --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+            --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+            --sp-12: 48px; --sp-16: 64px; --sp-20: 80px; --sp-24: 96px;
+            --sp-30: 120px;
 
-    /* ---- HERO ---- */
-    .hero{
-      min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-      text-align:center;padding:120px 24px 80px;
-      position:relative;
-    }
-    .hero::before{
-      content:'';position:absolute;top:-20%;left:50%;transform:translateX(-50%);
-      width:800px;height:800px;
-      background:radial-gradient(circle,rgba(76,141,255,.08) 0%,rgba(124,92,255,.04) 40%,transparent 70%);
-      pointer-events:none;
-    }
-    .badge{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:6px 16px;border-radius:100px;font-size:.8rem;font-weight:600;
-      background:var(--gradient-subtle);border:1px solid rgba(76,141,255,.2);
-      color:var(--accent);margin-bottom:32px;
-    }
-    .badge span{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-    .hero h1{
-      font-size:clamp(2.8rem,6vw,5rem);font-weight:800;line-height:1.08;
-      max-width:700px;letter-spacing:-.03em;
-    }
-    .hero h1 .gradient{
-      background:var(--gradient);-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-    }
-    .hero p{
-      font-size:clamp(1.05rem,2vw,1.25rem);color:var(--text-muted);
-      max-width:560px;margin:24px auto 0;line-height:1.7;
-    }
-    .hero-actions{display:flex;gap:16px;margin-top:40px;flex-wrap:wrap;justify-content:center}
-    .btn{
-      display:inline-flex;align-items:center;gap:8px;
-      padding:14px 28px;border-radius:10px;font-size:.95rem;font-weight:600;
-      text-decoration:none;transition:all .2s;cursor:pointer;border:none;
-    }
-    .btn-primary{background:var(--gradient);color:#fff}
-    .btn-primary:hover{opacity:.88;transform:translateY(-1px)}
-    .btn-secondary{background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
-    .btn-secondary:hover{border-color:var(--accent);background:var(--surface)}
+            --text-xs: 12px; --text-sm: 13px; --text-base: 14px;
+            --text-md: 15px; --text-lg: 16px; --text-xl: 18px;
+            --text-2xl: 20px; --text-3xl: 24px;
+            --text-4xl: clamp(28px, 4vw, 40px);
+            --text-hero: clamp(40px, 6vw, 72px);
 
-    /* ---- INSTALL SNIPPET ---- */
-    .install-box{
-      margin-top:48px;
-      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-      padding:16px 24px;display:inline-flex;align-items:center;gap:16px;
-      font-family:'JetBrains Mono',monospace;font-size:.95rem;
-    }
-    .install-box .dollar{color:var(--accent);user-select:none}
-    .install-box code{color:var(--text)}
-    .copy-btn{
-      background:none;border:1px solid var(--border);border-radius:6px;
-      padding:6px 10px;cursor:pointer;color:var(--text-muted);
-      font-size:.75rem;font-family:'Inter',sans-serif;font-weight:500;
-      transition:all .2s;
-    }
-    .copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+            --radius-sm: 6px; --radius: 10px; --radius-md: 12px;
+            --radius-lg: 16px; --radius-xl: 20px; --radius-full: 9999px;
 
-    /* ---- TERMINAL ---- */
-    .terminal-section{padding:0 24px 100px;display:flex;justify-content:center}
-    .terminal{
-      max-width:720px;width:100%;
-      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-      overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,.4);
-    }
-    .terminal-header{
-      display:flex;align-items:center;gap:8px;
-      padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface-2);
-    }
-    .terminal-dot{width:12px;height:12px;border-radius:50%}
-    .terminal-dot.r{background:#ff5f57}
-    .terminal-dot.y{background:#febc2e}
-    .terminal-dot.g{background:#28c840}
-    .terminal-title{
-      flex:1;text-align:center;font-size:.8rem;color:var(--text-muted);
-      font-family:'JetBrains Mono',monospace;
-    }
-    .terminal-body{
-      padding:24px;font-family:'JetBrains Mono',monospace;font-size:.85rem;
-      line-height:2;color:var(--text-muted);
-    }
-    .terminal-body .prompt{color:var(--accent)}
-    .terminal-body .cmd{color:var(--text)}
-    .terminal-body .flag{color:var(--accent-2)}
-    .terminal-body .out{color:var(--text-muted);opacity:.7}
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --shadow-glow: 0 0 40px var(--accent-glow);
 
-    /* ---- FEATURES ---- */
-    .features{padding:80px 24px 100px;max-width:1120px;margin:0 auto}
-    .section-label{
-      font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;
-      color:var(--accent);margin-bottom:12px;
-    }
-    .section-title{font-size:clamp(1.8rem,4vw,2.6rem);font-weight:800;letter-spacing:-.02em}
-    .section-sub{color:var(--text-muted);max-width:520px;margin-top:12px;font-size:1.05rem}
-    .features-grid{
-      display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
-      gap:20px;margin-top:56px;
-    }
-    .feature-card{
-      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-      padding:32px;transition:border-color .3s,transform .3s;
-    }
-    .feature-card:hover{border-color:rgba(76,141,255,.3);transform:translateY(-2px)}
-    .feature-icon{
-      width:48px;height:48px;border-radius:12px;
-      display:flex;align-items:center;justify-content:center;
-      background:var(--gradient-subtle);margin-bottom:20px;font-size:1.3rem;
-    }
-    .feature-card h3{font-size:1.1rem;font-weight:700;margin-bottom:8px}
-    .feature-card p{color:var(--text-muted);font-size:.92rem;line-height:1.7}
+            --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --duration-fast: 150ms;
+            --duration-base: 250ms;
+            --duration-slow: 400ms;
+        }
 
-    /* ---- COMMANDS ---- */
-    .commands{padding:60px 24px 100px;max-width:1120px;margin:0 auto}
-    .cmd-grid{
-      display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-      gap:12px;margin-top:48px;
-    }
-    .cmd-item{
-      display:flex;align-items:center;gap:14px;
-      padding:18px 22px;border-radius:var(--radius);
-      background:var(--surface);border:1px solid var(--border);
-      transition:border-color .2s;
-    }
-    .cmd-item:hover{border-color:rgba(76,141,255,.3)}
-    .cmd-item code{
-      font-family:'JetBrains Mono',monospace;font-size:.85rem;font-weight:500;
-      color:var(--accent);white-space:nowrap;
-    }
-    .cmd-item span{font-size:.88rem;color:var(--text-muted)}
+        /* ============================================
+           2. RESET & BASE
+           ============================================ */
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        a { color: inherit; text-decoration: none; }
+        code { font-family: 'JetBrains Mono', monospace; }
+        button { font-family: inherit; }
+        img { display: block; max-width: 100%; }
 
-    /* ---- INSTALL ---- */
-    .install{padding:60px 24px 120px;max-width:900px;margin:0 auto}
-    .install-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:48px}
-    .install-card{
-      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);
-      padding:32px;
-    }
-    .install-card h3{font-size:1rem;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:10px}
-    .install-card pre{
-      background:var(--bg);border:1px solid var(--border);border-radius:8px;
-      padding:16px;font-family:'JetBrains Mono',monospace;font-size:.82rem;
-      overflow-x:auto;color:var(--text);line-height:1.8;
-    }
+        /* ============================================
+           3. LAYOUT UTILITIES
+           ============================================ */
+        .container { max-width: 1200px; margin: 0 auto; padding: 0 var(--sp-6); }
 
-    /* ---- FOOTER ---- */
-    footer{
-      border-top:1px solid var(--border);padding:40px 24px;
-      text-align:center;color:var(--text-muted);font-size:.85rem;
-    }
-    footer a{color:var(--accent);text-decoration:none}
-    footer a:hover{text-decoration:underline}
+        .glass-card {
+            background: var(--bg-glass);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            transition: background var(--duration-base) var(--ease-out),
+                        border-color var(--duration-base) var(--ease-out),
+                        transform var(--duration-base) var(--ease-out);
+        }
+        .glass-card:hover {
+            background: var(--bg-glass-hover);
+            border-color: var(--border-hover);
+        }
 
-    /* ---- RESPONSIVE ---- */
-    @media(max-width:640px){
-      .nav-links{display:none}
-      .features-grid,.cmd-grid,.install-cards{grid-template-columns:1fr}
-      .hero-actions{flex-direction:column;align-items:center}
-      .install-box{flex-direction:column;gap:12px;text-align:center}
-    }
-  </style>
+        .gradient-border { position: relative; overflow: hidden; }
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), var(--purple), transparent);
+            opacity: 0;
+            transition: opacity var(--duration-base) var(--ease-out);
+        }
+        .gradient-border:hover::before { opacity: 1; }
+
+        .bento-grid { display: grid; gap: var(--sp-4); }
+
+        /* ============================================
+           4. BACKGROUND
+           ============================================ */
+        .bg-dots {
+            position: fixed; inset: 0;
+            background-image: radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+            background-size: 32px 32px;
+            pointer-events: none; z-index: 0;
+        }
+        .bg-blobs { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+        .bg-blob { position: absolute; border-radius: 50%; filter: blur(140px); }
+        .bg-blob-1 { width: 600px; height: 600px; background: var(--accent); top: -200px; right: -100px; opacity: 0.07; }
+        .bg-blob-2 { width: 500px; height: 500px; background: var(--cyan); bottom: -150px; left: -100px; opacity: 0.05; }
+        .bg-blob-3 { width: 400px; height: 400px; background: var(--purple); top: 50%; left: 40%; opacity: 0.03; }
+
+        .content-wrapper { position: relative; z-index: 1; }
+
+        /* ============================================
+           5. NAVIGATION
+           ============================================ */
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            padding: 0 var(--sp-6);
+            transition: background var(--duration-base) var(--ease-out),
+                        border-color var(--duration-base) var(--ease-out);
+            border-bottom: 1px solid transparent;
+        }
+        .nav-scrolled {
+            background: rgba(10, 10, 15, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom-color: var(--border);
+        }
+        .nav-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: flex; justify-content: space-between; align-items: center; height: 64px;
+        }
+        .nav-logo {
+            display: flex; align-items: center; gap: var(--sp-3);
+            font-weight: 700; font-size: var(--text-xl);
+        }
+        .nav-logo-icon {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            font-size: var(--text-lg); font-weight: 800; color: var(--bg-primary);
+        }
+        .nav-links { display: flex; gap: var(--sp-8); list-style: none; }
+        .nav-link {
+            color: var(--text-secondary); font-size: var(--text-base); font-weight: 500;
+            transition: color var(--duration-fast); position: relative;
+        }
+        .nav-link::after {
+            content: ''; position: absolute; bottom: -4px; left: 0; right: 0;
+            height: 2px; background: var(--accent); border-radius: 1px;
+            transform: scaleX(0); transition: transform var(--duration-base) var(--ease-out);
+        }
+        .nav-link:hover, .nav-link-active { color: var(--text-primary); }
+        .nav-link-active::after { transform: scaleX(1); }
+        .nav-cta {
+            display: flex; align-items: center; gap: var(--sp-2);
+            padding: var(--sp-2) var(--sp-4);
+            background: var(--accent-dim);
+            border: 1px solid rgba(38, 132, 255, 0.2);
+            border-radius: var(--radius);
+            color: var(--accent); font-size: var(--text-base); font-weight: 500;
+            transition: all var(--duration-fast);
+        }
+        .nav-cta:hover { background: rgba(38, 132, 255, 0.2); border-color: rgba(38, 132, 255, 0.3); }
+        .nav-cta svg { width: 16px; height: 16px; }
+
+        /* Hamburger */
+        .nav-hamburger {
+            display: none; background: none; border: none; cursor: pointer;
+            padding: var(--sp-2); color: var(--text-primary); z-index: 110;
+        }
+        .hamburger-lines { display: flex; flex-direction: column; gap: 5px; width: 22px; }
+        .hamburger-line {
+            display: block; width: 100%; height: 2px; background: currentColor;
+            border-radius: 1px;
+            transition: transform var(--duration-base) var(--ease-out), opacity var(--duration-fast);
+            transform-origin: center;
+        }
+        .nav-hamburger-open .hamburger-line:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .nav-hamburger-open .hamburger-line:nth-child(2) { opacity: 0; }
+        .nav-hamburger-open .hamburger-line:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+        /* Mobile */
+        .nav-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.6); z-index: 99;
+            opacity: 0; transition: opacity var(--duration-base) var(--ease-out);
+        }
+        .nav-overlay-visible { opacity: 1; }
+        .nav-mobile {
+            position: fixed; top: 0; right: 0; bottom: 0; width: 280px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border); z-index: 105;
+            padding: var(--sp-20) var(--sp-6) var(--sp-6);
+            transform: translateX(100%);
+            transition: transform var(--duration-slow) var(--ease-out);
+            display: none; flex-direction: column; gap: var(--sp-2);
+        }
+        .nav-mobile-open { transform: translateX(0); }
+        .nav-mobile-link {
+            display: block; padding: var(--sp-3) var(--sp-4);
+            color: var(--text-secondary); font-size: var(--text-lg); font-weight: 500;
+            border-radius: var(--radius); transition: all var(--duration-fast);
+        }
+        .nav-mobile-link:hover { color: var(--text-primary); background: var(--bg-glass); }
+        .nav-mobile-cta {
+            display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
+            margin-top: var(--sp-4); padding: var(--sp-3) var(--sp-4);
+            background: var(--accent-dim);
+            border: 1px solid rgba(38, 132, 255, 0.2);
+            border-radius: var(--radius);
+            color: var(--accent); font-size: var(--text-base); font-weight: 500;
+        }
+        .nav-mobile-cta svg { width: 16px; height: 16px; }
+
+        /* ============================================
+           6. HERO
+           ============================================ */
+        .hero {
+            min-height: 100vh;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center;
+            padding: var(--sp-30) var(--sp-6) var(--sp-20);
+            max-width: 900px; margin: 0 auto; position: relative;
+        }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: var(--sp-2);
+            padding: var(--sp-2) var(--sp-4);
+            background: var(--bg-glass); border: 1px solid var(--border);
+            border-radius: var(--radius-full);
+            font-size: var(--text-sm); color: var(--text-secondary);
+            margin-bottom: var(--sp-8);
+            animation: hero-fade-in 0.8s var(--ease-out) both;
+            overflow: hidden; position: relative;
+        }
+        .hero-badge::after {
+            content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+            animation: shimmer 3s ease-in-out infinite;
+        }
+        @keyframes shimmer { 0% { left: -100%; } 100% { left: 100%; } }
+        .hero-badge-dot {
+            width: 6px; height: 6px; background: var(--green); border-radius: 50%;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .hero-title {
+            font-size: var(--text-hero); font-weight: 800;
+            line-height: 1.05; letter-spacing: -0.03em;
+            margin-bottom: var(--sp-6);
+            animation: hero-fade-in 0.8s var(--ease-out) 0.1s both;
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 50%, var(--cyan) 100%);
+            -webkit-background-clip: text; background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .hero-desc {
+            font-size: var(--text-xl); line-height: 1.7; color: var(--text-secondary);
+            max-width: 600px; margin-bottom: var(--sp-10);
+            animation: hero-fade-in 0.8s var(--ease-out) 0.2s both;
+        }
+        .hero-actions {
+            display: flex; gap: var(--sp-3); flex-wrap: wrap; justify-content: center;
+            animation: hero-fade-in 0.8s var(--ease-out) 0.3s both;
+        }
+        .btn-primary {
+            display: inline-flex; align-items: center; gap: var(--sp-2);
+            padding: var(--sp-3) var(--sp-6);
+            background: var(--accent); color: var(--bg-primary);
+            border: none; border-radius: var(--radius);
+            font-size: var(--text-md); font-weight: 600; cursor: pointer;
+            transition: all var(--duration-fast);
+        }
+        .btn-primary:hover { background: #4c9aff; transform: translateY(-1px); box-shadow: var(--shadow-glow); }
+        .btn-secondary {
+            display: inline-flex; align-items: center; gap: var(--sp-2);
+            padding: var(--sp-3) var(--sp-6);
+            background: var(--bg-glass); color: var(--text-primary);
+            border: 1px solid var(--border); border-radius: var(--radius);
+            font-size: var(--text-md); font-weight: 500; cursor: pointer;
+            transition: all var(--duration-fast);
+        }
+        .btn-secondary:hover { background: var(--bg-glass-hover); border-color: var(--border-hover); transform: translateY(-1px); }
+
+        .install-bar {
+            display: flex; align-items: center; gap: var(--sp-3);
+            margin-top: var(--sp-12); padding: var(--sp-4) var(--sp-5);
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            animation: hero-fade-in 0.8s var(--ease-out) 0.4s both;
+            position: relative;
+        }
+        .install-bar code { font-size: var(--text-base); color: var(--text-secondary); }
+        .install-bar code .hl { color: var(--green); }
+
+        .copy-btn {
+            background: none; border: none; color: var(--text-muted); cursor: pointer;
+            padding: var(--sp-1); border-radius: var(--sp-1);
+            transition: color var(--duration-fast); display: flex; position: relative;
+        }
+        .copy-btn:hover { color: var(--text-primary); }
+        .copy-btn svg { width: 16px; height: 16px; }
+        .copy-btn .icon-check { display: none; color: var(--green); }
+        .copy-btn-copied .icon-clipboard { display: none; }
+        .copy-btn-copied .icon-check { display: block; }
+        .copy-tooltip {
+            position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+            padding: var(--sp-1) var(--sp-2);
+            background: var(--green); color: var(--bg-primary);
+            font-size: var(--text-xs); font-weight: 600;
+            border-radius: var(--sp-1); white-space: nowrap;
+            opacity: 0; pointer-events: none; transition: opacity var(--duration-fast);
+        }
+        .copy-btn-copied .copy-tooltip { opacity: 1; }
+        @keyframes hero-fade-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================
+           7. STATS STRIP
+           ============================================ */
+        .stats-wrapper { margin-top: -40px; position: relative; z-index: 2; }
+        .stats-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 1px; background: var(--border);
+            border-radius: var(--radius-xl); overflow: hidden;
+            box-shadow: var(--shadow-lg);
+        }
+        .stat-card {
+            background: var(--bg-secondary);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            padding: var(--sp-8); text-align: center;
+        }
+        .stat-value {
+            font-size: 32px; font-weight: 700; letter-spacing: -0.02em;
+            margin-bottom: var(--sp-1);
+        }
+        .stat-value-accent { color: var(--accent); }
+        .stat-value-cyan { color: var(--cyan); }
+        .stat-value-green { color: var(--green); }
+        .stat-value-orange { color: var(--orange); }
+
+        .stat-label { font-size: var(--text-sm); color: var(--text-muted); font-weight: 500; }
+
+        /* ============================================
+           8. SECTION COMMON
+           ============================================ */
+        .section { padding: var(--sp-24) var(--sp-6); max-width: 1200px; margin: 0 auto; }
+        .section-label {
+            display: inline-flex; align-items: center; gap: var(--sp-2);
+            font-size: var(--text-sm); font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--accent); margin-bottom: var(--sp-4);
+        }
+        .section-title {
+            font-size: var(--text-4xl); font-weight: 700;
+            letter-spacing: -0.02em; margin-bottom: var(--sp-4);
+        }
+        .section-desc {
+            font-size: var(--text-lg); color: var(--text-secondary);
+            max-width: 560px; line-height: 1.7; margin-bottom: var(--sp-12);
+        }
+
+        /* ============================================
+           9. FEATURES BENTO
+           ============================================ */
+        .features-bento { grid-template-columns: repeat(3, 1fr); }
+        .feature-card { padding: var(--sp-8); }
+        .feature-card:hover { transform: translateY(-2px); }
+        .feature-icon {
+            width: 44px; height: 44px; border-radius: var(--radius);
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: var(--sp-4);
+        }
+        .feature-icon svg { width: 20px; height: 20px; }
+        .feature-icon-accent { background: var(--accent-dim); color: var(--accent); }
+        .feature-icon-green { background: var(--green-dim); color: var(--green); }
+        .feature-icon-cyan { background: var(--cyan-dim); color: var(--cyan); }
+        .feature-icon-orange { background: var(--orange-dim); color: var(--orange); }
+        .feature-icon-pink { background: var(--pink-dim); color: var(--pink); }
+        .feature-icon-purple { background: var(--purple-dim); color: var(--purple); }
+        .feature-title { font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--sp-2); }
+        .feature-desc { font-size: var(--text-base); color: var(--text-secondary); line-height: 1.6; }
+        .feature-code {
+            display: inline-block; margin-top: var(--sp-3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: var(--text-xs); color: var(--accent);
+            background: var(--accent-dim); padding: var(--sp-1) var(--sp-2);
+            border-radius: var(--radius-sm);
+        }
+
+        /* ============================================
+           10. TABS COMPONENT
+           ============================================ */
+        .tabs-bar {
+            display: flex; gap: var(--sp-1); padding: var(--sp-1);
+            background: var(--bg-glass); border: 1px solid var(--border);
+            border-radius: var(--radius-full); width: fit-content;
+            margin-bottom: var(--sp-8);
+        }
+        .tab-btn {
+            padding: var(--sp-2) var(--sp-5); border: none; background: none;
+            color: var(--text-muted); font-size: var(--text-sm); font-weight: 500;
+            border-radius: var(--radius-full); cursor: pointer;
+            transition: all var(--duration-fast);
+        }
+        .tab-btn:hover { color: var(--text-secondary); }
+        .tab-btn-active {
+            background: linear-gradient(135deg, var(--accent), var(--purple));
+            color: var(--bg-primary); font-weight: 600;
+        }
+        .tab-content { display: none; animation: tab-fade-in var(--duration-base) var(--ease-out); }
+        .tab-content-active { display: block; }
+        @keyframes tab-fade-in {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ============================================
+           11. COMMAND REFERENCE
+           ============================================ */
+        .cmd-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-4); }
+        .cmd-group-card { padding: var(--sp-6); }
+        .cmd-group-title {
+            font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--sp-4);
+            display: flex; align-items: center; gap: var(--sp-2);
+        }
+        .cmd-group-icon {
+            width: 28px; height: 28px; border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cmd-group-icon svg { width: 14px; height: 14px; }
+        .cmd-item {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: var(--sp-2) 0;
+            border-bottom: 1px solid var(--border);
+            gap: var(--sp-3);
+        }
+        .cmd-item:last-child { border-bottom: none; }
+        .cmd-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: var(--text-xs); color: var(--accent); white-space: nowrap;
+        }
+        .cmd-desc { font-size: var(--text-xs); color: var(--text-muted); text-align: right; }
+
+        /* ============================================
+           12. CODE BLOCKS
+           ============================================ */
+        .code-layout { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6); align-items: start; }
+        .code-info-title { font-size: var(--text-2xl); font-weight: 600; margin-bottom: var(--sp-3); }
+        .code-info-desc { font-size: var(--text-base); color: var(--text-secondary); line-height: 1.7; margin-bottom: var(--sp-6); }
+        .code-info-list { display: flex; flex-direction: column; gap: var(--sp-3); list-style: none; }
+        .code-info-item { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--text-sm); color: var(--text-secondary); }
+        .code-info-dot { width: 6px; height: 6px; min-width: 6px; background: var(--green); border-radius: 50%; }
+
+        .code-block {
+            background: var(--bg-secondary); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); overflow: hidden;
+        }
+        .code-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border);
+        }
+        .code-dots { display: flex; gap: 6px; }
+        .code-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.08); }
+        .code-filename { font-family: 'JetBrains Mono', monospace; font-size: var(--text-xs); color: var(--text-muted); }
+        .code-header-right { display: flex; align-items: center; gap: var(--sp-3); }
+        .code-content { padding: var(--sp-5); overflow-x: auto; }
+        .code-content pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: var(--text-sm); line-height: 1.7; color: var(--text-secondary);
+        }
+        .code-content .cm { color: var(--text-muted); }
+        .code-content .cmd { color: var(--green); }
+
+        /* ============================================
+           13. INSTALL METHODS
+           ============================================ */
+        .install-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--sp-4); }
+        .install-card { padding: var(--sp-6); }
+        .install-card-title { font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--sp-3); }
+        .install-card p { font-size: var(--text-base); color: var(--text-secondary); line-height: 1.6; }
+
+        /* ============================================
+           14. CONFIG TABLE
+           ============================================ */
+        .config-card { padding: var(--sp-6); margin-bottom: var(--sp-4); }
+        .config-title { font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--sp-4); }
+        .config-table { width: 100%; border-collapse: collapse; }
+        .config-table th, .config-table td {
+            padding: var(--sp-3) var(--sp-4); text-align: left;
+            border-bottom: 1px solid var(--border); font-size: var(--text-base);
+        }
+        .config-table th {
+            color: var(--text-muted); font-weight: 500;
+            font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em;
+        }
+        .config-table td:first-child {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: var(--text-sm); color: var(--accent); white-space: nowrap;
+        }
+        .config-table td:last-child { color: var(--text-secondary); }
+        .config-table tr:last-child td { border-bottom: none; }
+
+        /* ============================================
+           15. FOOTER
+           ============================================ */
+        .footer { border-top: 1px solid var(--border); padding: var(--sp-12) var(--sp-6); margin-top: var(--sp-16); }
+        .footer-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: grid; grid-template-columns: 1fr auto auto;
+            gap: var(--sp-10); align-items: start;
+        }
+        .footer-brand { display: flex; flex-direction: column; gap: var(--sp-3); }
+        .footer-brand-name { font-weight: 700; font-size: var(--text-lg); display: flex; align-items: center; gap: var(--sp-2); }
+        .footer-brand-text { font-size: var(--text-sm); color: var(--text-muted); line-height: 1.6; }
+        .footer-badges { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+        .footer-badge {
+            display: inline-flex; align-items: center;
+            padding: var(--sp-1) var(--sp-3);
+            background: var(--bg-glass); border: 1px solid var(--border);
+            border-radius: var(--radius-full);
+            font-size: 11px; color: var(--text-muted); font-weight: 500;
+        }
+        .footer-col-title {
+            font-size: var(--text-xs); font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: var(--sp-4);
+        }
+        .footer-col-links { display: flex; flex-direction: column; gap: var(--sp-3); }
+        .footer-link { font-size: var(--text-sm); color: var(--text-secondary); transition: color var(--duration-fast); }
+        .footer-link:hover { color: var(--text-primary); }
+        .footer-bottom {
+            max-width: 1200px; margin: var(--sp-8) auto 0; padding-top: var(--sp-6);
+            border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .footer-copyright { font-size: var(--text-sm); color: var(--text-muted); }
+        .back-to-top {
+            display: flex; align-items: center; gap: var(--sp-2);
+            font-size: var(--text-sm); color: var(--text-muted);
+            background: none; border: none; cursor: pointer;
+            transition: color var(--duration-fast);
+        }
+        .back-to-top:hover { color: var(--text-primary); }
+        .back-to-top svg { width: 14px; height: 14px; }
+
+        /* ============================================
+           16. SCROLL REVEAL
+           ============================================ */
+        .reveal {
+            opacity: 0; transform: translateY(24px);
+            transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+        }
+        .reveal-visible { opacity: 1; transform: translateY(0); }
+        .reveal-stagger > .reveal { transition-delay: calc(var(--reveal-delay, 0) * 80ms); }
+
+        /* ============================================
+           17. RESPONSIVE — 1024px
+           ============================================ */
+        @media (max-width: 1024px) {
+            .nav-links { display: none; }
+            .nav-cta { display: none; }
+            .nav-hamburger { display: flex; }
+            .nav-overlay { display: block; }
+            .nav-mobile { display: flex; }
+            .features-bento { grid-template-columns: repeat(2, 1fr); }
+            .cmd-grid { grid-template-columns: 1fr; }
+            .code-layout { grid-template-columns: 1fr; }
+            .install-grid { grid-template-columns: 1fr; }
+        }
+
+        /* ============================================
+           18. RESPONSIVE — 640px
+           ============================================ */
+        @media (max-width: 640px) {
+            .features-bento { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .hero-actions { flex-direction: column; width: 100%; }
+            .btn-primary, .btn-secondary { justify-content: center; }
+            .install-bar { flex-direction: column; gap: var(--sp-2); text-align: center; }
+            .footer-inner { grid-template-columns: 1fr; gap: var(--sp-8); }
+            .footer-bottom { flex-direction: column; gap: var(--sp-4); text-align: center; }
+            .section { padding: var(--sp-16) var(--sp-4); }
+        }
+
+        /* ============================================
+           19. ACCESSIBILITY
+           ============================================ */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+            html { scroll-behavior: auto; }
+            .reveal { opacity: 1; transform: none; }
+        }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .body-locked { overflow: hidden; }
+    </style>
 </head>
 <body>
+    <!-- Background -->
+    <div class="bg-blobs">
+        <div class="bg-blob bg-blob-1"></div>
+        <div class="bg-blob bg-blob-2"></div>
+        <div class="bg-blob bg-blob-3"></div>
+    </div>
+    <div class="bg-dots"></div>
 
-<!-- NAV -->
-<nav>
-  <div class="nav-inner">
-    <a href="#" class="nav-brand">bb</a>
-    <ul class="nav-links">
-      <li><a href="#features">Features</a></li>
-      <li><a href="#commands">Commands</a></li>
-      <li><a href="#install">Install</a></li>
-    </ul>
-    <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="nav-cta" target="_blank" rel="noopener">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      GitHub
-    </a>
-  </div>
-</nav>
+    <div class="content-wrapper">
+        <!-- ==================== NAV ==================== -->
+        <nav class="nav" id="navbar">
+            <div class="nav-inner">
+                <a href="#top" class="nav-logo">
+                    <div class="nav-logo-icon">B</div>
+                    bb CLI
+                </a>
+                <ul class="nav-links">
+                    <li><a href="#features" class="nav-link" data-nav>Features</a></li>
+                    <li><a href="#install" class="nav-link" data-nav>Install</a></li>
+                    <li><a href="#commands" class="nav-link" data-nav>Commands</a></li>
+                    <li><a href="#examples" class="nav-link" data-nav>Examples</a></li>
+                    <li><a href="#config" class="nav-link" data-nav>Config</a></li>
+                </ul>
+                <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="nav-cta" target="_blank" rel="noopener">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                    GitHub
+                </a>
+                <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle navigation menu">
+                    <span class="hamburger-lines">
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                    </span>
+                </button>
+            </div>
+        </nav>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="badge"><span></span> Open Source CLI Tool</div>
-  <h1>Bitbucket Cloud,<br><span class="gradient">from your terminal.</span></h1>
-  <p>Manage repositories, pull requests, pipelines, issues, and more &mdash; all without leaving the command line.</p>
-  <div class="hero-actions">
-    <a href="#install" class="btn btn-primary">Get Started</a>
-    <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="btn btn-secondary" target="_blank" rel="noopener">View on GitHub</a>
-  </div>
-  <div class="install-box">
-    <span class="dollar">$</span>
-    <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh</code>
-    <button class="copy-btn" onclick="copyInstall()">Copy</button>
-  </div>
-</section>
+        <!-- Mobile overlay + panel -->
+        <div class="nav-overlay" id="nav-overlay"></div>
+        <div class="nav-mobile" id="nav-mobile">
+            <a href="#features" class="nav-mobile-link" data-mobile-link>Features</a>
+            <a href="#install" class="nav-mobile-link" data-mobile-link>Install</a>
+            <a href="#commands" class="nav-mobile-link" data-mobile-link>Commands</a>
+            <a href="#examples" class="nav-mobile-link" data-mobile-link>Examples</a>
+            <a href="#config" class="nav-mobile-link" data-mobile-link>Config</a>
+            <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="nav-mobile-cta" target="_blank" rel="noopener">
+                <svg viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub
+            </a>
+        </div>
 
-<!-- TERMINAL DEMO -->
-<section class="terminal-section">
-  <div class="terminal">
-    <div class="terminal-header">
-      <div class="terminal-dot r"></div>
-      <div class="terminal-dot y"></div>
-      <div class="terminal-dot g"></div>
-      <div class="terminal-title">bb &mdash; terminal</div>
-    </div>
-    <div class="terminal-body">
-      <div><span class="prompt">$</span> <span class="cmd">bb auth login</span></div>
-      <div class="out">&#10003; Authenticated as philip</div>
-      <br>
-      <div><span class="prompt">$</span> <span class="cmd">bb pr list</span> <span class="flag">--state open</span></div>
-      <div class="out">ID    TITLE                    AUTHOR    STATE</div>
-      <div class="out">42    Add dark mode support    philip    OPEN</div>
-      <div class="out">38    Fix CI pipeline cache     maria     OPEN</div>
-      <br>
-      <div><span class="prompt">$</span> <span class="cmd">bb pr merge</span> <span class="flag">42</span></div>
-      <div class="out">&#10003; Pull request #42 merged successfully</div>
-      <br>
-      <div><span class="prompt">$</span> <span class="cmd">bb pipeline run</span> <span class="flag">--branch main</span></div>
-      <div class="out">&#10003; Pipeline #187 triggered on branch main</div>
-    </div>
-  </div>
-</section>
+        <!-- ==================== HERO ==================== -->
+        <section class="hero" id="top">
+            <div class="hero-badge">
+                <span class="hero-badge-dot"></span>
+                Open Source &middot; Written in Go &middot; MIT License
+            </div>
+            <h1 class="hero-title">
+                Bitbucket Cloud,<br>
+                <span class="gradient-text">from your terminal.</span>
+            </h1>
+            <p class="hero-desc">
+                Manage repositories, pull requests, pipelines, issues, and more &mdash; all without leaving the command line.
+            </p>
+            <div class="hero-actions">
+                <a href="#install" class="btn-primary">
+                    Get Started
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+                </a>
+                <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="btn-secondary" target="_blank" rel="noopener">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                    View on GitHub
+                </a>
+            </div>
+            <div class="install-bar">
+                <code>$ <span class="hl">brew install</span> PhilipKram/tap/bb</code>
+                <button class="copy-btn" data-copy="brew install PhilipKram/tap/bb" title="Copy to clipboard">
+                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span class="copy-tooltip">Copied!</span>
+                </button>
+            </div>
+        </section>
 
-<!-- FEATURES -->
-<section class="features" id="features">
-  <div class="section-label">Features</div>
-  <div class="section-title">Everything you need,<br>nothing you don't.</div>
-  <p class="section-sub">A focused CLI that covers the full Bitbucket Cloud workflow.</p>
-  <div class="features-grid">
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
-      </div>
-      <h3>Secure Authentication</h3>
-      <p>App Password and OAuth 2.0 support with automatic token refresh. Credentials stored securely via XDG conventions.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-      </div>
-      <h3>Pull Request Workflow</h3>
-      <p>Create, review, approve, merge, and comment on PRs. Add inline comments on specific files and lines. View diffs and activity logs directly in your terminal.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-      </div>
-      <h3>Pipeline Management</h3>
-      <p>Trigger, stop, and monitor CI/CD pipelines. Stream build logs and inspect individual pipeline steps.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
-      </div>
-      <h3>Repository Control</h3>
-      <p>List, create, fork, and delete repositories. Browse commits and view diffs across branches.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
-      </div>
-      <h3>Flexible Output</h3>
-      <p>Human-readable tables by default, JSON output for scripting. Pipe results into jq, awk, or any tool you like.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
-      </div>
-      <h3>Cross-Platform</h3>
-      <p>Pre-built binaries for macOS, Linux, and Windows. Install via Homebrew, go install, or download directly.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-      </div>
-      <h3>Easy Updates</h3>
-      <p>Self-update with <code style="color:var(--accent)">bb upgrade</code> or get notified automatically. Background version checks with zero added latency.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-      </div>
-      <h3>AI Agent Integration</h3>
-      <p>Built-in MCP server lets AI agents like Claude Desktop and Cursor manage Bitbucket resources through natural language.</p>
-    </div>
-    <div class="feature-card">
-      <div class="feature-icon">
-        <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-      </div>
-      <h3>Shell Completion</h3>
-      <p>Tab completion for Bash, Zsh, Fish, and PowerShell. Dynamic suggestions for workspaces, repositories, branches, and PR numbers.</p>
-    </div>
-  </div>
-</section>
+        <!-- ==================== STATS ==================== -->
+        <div class="stats-wrapper container">
+            <div class="stats-grid reveal">
+                <div class="stat-card">
+                    <div class="stat-value stat-value-accent" data-count="70">0</div>
+                    <div class="stat-label">Commands</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value stat-value-cyan">Go</div>
+                    <div class="stat-label">Written In</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value stat-value-green" data-count="13">0</div>
+                    <div class="stat-label">Command Groups</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value stat-value-orange">MIT</div>
+                    <div class="stat-label">License</div>
+                </div>
+            </div>
+        </div>
 
-<!-- COMMANDS -->
-<section class="commands" id="commands">
-  <div class="section-label">Commands</div>
-  <div class="section-title">One tool, full coverage.</div>
-  <p class="section-sub">13 command groups covering every part of the Bitbucket Cloud API.</p>
-  <div class="cmd-grid">
-    <div class="cmd-item"><code>bb auth</code><span>Login &amp; manage credentials</span></div>
-    <div class="cmd-item"><code>bb repo</code><span>Repositories &amp; commits</span></div>
-    <div class="cmd-item"><code>bb pr</code><span>Pull requests &amp; reviews</span></div>
-    <div class="cmd-item"><code>bb pipeline</code><span>CI/CD pipelines &amp; logs</span></div>
-    <div class="cmd-item"><code>bb issue</code><span>Issue tracking</span></div>
-    <div class="cmd-item"><code>bb branch</code><span>Branches &amp; tags</span></div>
-    <div class="cmd-item"><code>bb snippet</code><span>Code snippets</span></div>
-    <div class="cmd-item"><code>bb workspace</code><span>Workspaces &amp; projects</span></div>
-    <div class="cmd-item"><code>bb user</code><span>Account &amp; settings</span></div>
-    <div class="cmd-item"><code>bb config</code><span>CLI configuration</span></div>
-    <div class="cmd-item"><code>bb completion</code><span>Shell completions</span></div>
-    <div class="cmd-item"><code>bb mcp</code><span>AI agent integration</span></div>
-    <div class="cmd-item"><code>bb upgrade</code><span>Self-update to latest version</span></div>
-  </div>
-</section>
+        <!-- ==================== FEATURES ==================== -->
+        <section class="section" id="features">
+            <div class="section-label reveal">Why bb</div>
+            <h2 class="section-title reveal">Everything Bitbucket, one command away</h2>
+            <p class="section-desc reveal">
+                A powerful CLI that brings the full Bitbucket Cloud workflow to your terminal with a familiar, intuitive interface.
+            </p>
+            <div class="bento-grid features-bento reveal-stagger">
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 0">
+                    <div class="feature-icon feature-icon-accent">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M6 9v12"/></svg>
+                    </div>
+                    <h3 class="feature-title">Pull Requests</h3>
+                    <p class="feature-desc">Create, review, approve, merge, and comment on PRs. Add inline comments on specific files and lines. View diffs and activity logs.</p>
+                    <span class="feature-code">bb pr create --title "Feature" --reviewer @bob</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 1">
+                    <div class="feature-icon feature-icon-green">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    </div>
+                    <h3 class="feature-title">Issues</h3>
+                    <p class="feature-desc">Full issue lifecycle management. Create, edit, vote, watch, comment, and delete issues from the command line.</p>
+                    <span class="feature-code">bb issue list --state open</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 2">
+                    <div class="feature-icon feature-icon-cyan">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    </div>
+                    <h3 class="feature-title">CI/CD Pipelines</h3>
+                    <p class="feature-desc">Trigger pipelines, view step logs, stop running builds, and watch pipeline status in real-time from your terminal.</p>
+                    <span class="feature-code">bb pipeline trigger --branch main</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 3">
+                    <div class="feature-icon feature-icon-purple">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                    </div>
+                    <h3 class="feature-title">Repositories</h3>
+                    <p class="feature-desc">List, create, fork, clone, and delete repositories. Browse commits and view diffs across branches.</p>
+                    <span class="feature-code">bb repo clone workspace/repo</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 4">
+                    <div class="feature-icon feature-icon-pink">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 009 9"/></svg>
+                    </div>
+                    <h3 class="feature-title">Branches &amp; Tags</h3>
+                    <p class="feature-desc">Create and delete branches, manage tags, and view branch restrictions. Full branch lifecycle management.</p>
+                    <span class="feature-code">bb branch list workspace/repo</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 5">
+                    <div class="feature-icon feature-icon-orange">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                    </div>
+                    <h3 class="feature-title">OAuth 2.0 Auth</h3>
+                    <p class="feature-desc">Login via browser OAuth or app passwords. Tokens auto-refresh when expired. Credentials stored securely via XDG conventions.</p>
+                    <span class="feature-code">bb auth login</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 6">
+                    <div class="feature-icon feature-icon-cyan">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                    </div>
+                    <h3 class="feature-title">Flexible Output</h3>
+                    <p class="feature-desc">Human-readable tables by default, JSON output for scripting. Pipe results into jq, awk, or any tool you like.</p>
+                    <span class="feature-code">bb pr list --json</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 7">
+                    <div class="feature-icon feature-icon-green">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <h3 class="feature-title">MCP Server</h3>
+                    <p class="feature-desc">Built-in Model Context Protocol server with 7 tools for AI integration. Works with Claude Desktop and Cursor.</p>
+                    <span class="feature-code">bb mcp serve</span>
+                </div>
+                <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 8">
+                    <div class="feature-icon feature-icon-purple">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </div>
+                    <h3 class="feature-title">Shell Completion</h3>
+                    <p class="feature-desc">Tab completion for Bash, Zsh, Fish, and PowerShell. Dynamic suggestions for workspaces, repositories, branches, and PR numbers.</p>
+                    <span class="feature-code">bb completion zsh</span>
+                </div>
+            </div>
+        </section>
 
-<!-- INSTALL -->
-<section class="install" id="install">
-  <div class="section-label">Installation</div>
-  <div class="section-title">Up and running in seconds.</div>
-  <div class="install-cards">
-    <div class="install-card">
-      <h3>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
-        Quick Install
-      </h3>
-      <pre>curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh</pre>
-    </div>
-    <div class="install-card">
-      <h3>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 8l4 4-4 4M7 16l-4-4 4-4"/></svg>
-        Homebrew
-      </h3>
-      <pre>brew install PhilipKram/tap/bb</pre>
-    </div>
-    <div class="install-card">
-      <h3>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
-        Go Install
-      </h3>
-      <pre>go install github.com/PhilipKram/bitbucket-cli@latest</pre>
-    </div>
-    <div class="install-card">
-      <h3>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        Pre-built Binary
-      </h3>
-      <pre>Download from the
-<a href="https://github.com/PhilipKram/Bitbucket-CLI/releases" style="color:var(--accent)">GitHub Releases</a> page.
-Available for macOS, Linux &amp; Windows.</pre>
-    </div>
-  </div>
-</section>
+        <!-- ==================== INSTALL ==================== -->
+        <section class="section" id="install">
+            <div class="section-label reveal">Installation</div>
+            <h2 class="section-title reveal">Get started in seconds</h2>
+            <p class="section-desc reveal">
+                Multiple installation methods to fit your workflow. Pick whichever suits you best.
+            </p>
 
-<!-- FOOTER -->
-<footer>
-  <p>
-    <strong style="color:var(--text)">bb</strong> &mdash; MIT License &middot;
-    Built by <a href="https://github.com/PhilipKram" target="_blank" rel="noopener">Philip Kram</a> &middot;
-    <a href="https://github.com/PhilipKram/Bitbucket-CLI" target="_blank" rel="noopener">Source on GitHub</a>
-  </p>
-</footer>
+            <div class="install-grid reveal-stagger">
+                <div class="glass-card gradient-border install-card reveal" style="--reveal-delay: 0">
+                    <h3 class="install-card-title">Quick Install</h3>
+                    <div class="code-block" style="margin-top: var(--sp-3);">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right">
+                                <span class="code-filename">terminal</span>
+                                <button class="copy-btn" data-copy="curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh" title="Copy">
+                                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span class="copy-tooltip">Copied!</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cmd">curl -fsSL https://raw.githubusercontent.com/PhilipKram/Bitbucket-CLI/main/install.sh | sh</span></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card gradient-border install-card reveal" style="--reveal-delay: 1">
+                    <h3 class="install-card-title">Homebrew</h3>
+                    <div class="code-block" style="margin-top: var(--sp-3);">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right">
+                                <span class="code-filename">terminal</span>
+                                <button class="copy-btn" data-copy="brew install PhilipKram/tap/bb" title="Copy">
+                                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span class="copy-tooltip">Copied!</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cmd">brew install PhilipKram/tap/bb</span></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card gradient-border install-card reveal" style="--reveal-delay: 2">
+                    <h3 class="install-card-title">Go Install</h3>
+                    <div class="code-block" style="margin-top: var(--sp-3);">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right">
+                                <span class="code-filename">terminal</span>
+                                <button class="copy-btn" data-copy="go install github.com/PhilipKram/bitbucket-cli@latest" title="Copy">
+                                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span class="copy-tooltip">Copied!</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cm"># Requires Go 1.22+</span>
+<span class="cmd">go install github.com/PhilipKram/bitbucket-cli@latest</span></pre>
+                        </div>
+                    </div>
+                </div>
+                <div class="glass-card gradient-border install-card reveal" style="--reveal-delay: 3">
+                    <h3 class="install-card-title">Pre-built Binary</h3>
+                    <p>Download pre-built binaries for Linux, macOS, and Windows from the <a href="https://github.com/PhilipKram/Bitbucket-CLI/releases" style="color: var(--accent);">releases page</a>.</p>
+                    <p style="margin-top: var(--sp-2); font-size: var(--text-xs); color: var(--text-muted);">Available for amd64 and arm64.</p>
+                </div>
+            </div>
 
-<script>
-function copyInstall(){
-  const t=document.getElementById('install-cmd').textContent;
-  navigator.clipboard.writeText(t).then(()=>{
-    const b=document.querySelector('.copy-btn');
-    b.textContent='Copied!';
-    setTimeout(()=>b.textContent='Copy',1500);
-  });
-}
-</script>
+            <!-- Authentication sub-section -->
+            <div style="margin-top: var(--sp-16);">
+                <h3 class="section-title reveal" style="font-size: var(--text-3xl);">Authentication</h3>
+                <p class="section-desc reveal">Authenticate with Bitbucket Cloud. OAuth is the default &mdash; just run <code style="color: var(--accent);">bb auth login</code> and it opens your browser.</p>
+
+                <div class="code-layout reveal">
+                    <div>
+                        <h3 class="code-info-title">OAuth Login (Default)</h3>
+                        <p class="code-info-desc">
+                            The CLI starts a local server, opens your browser for authorization, and exchanges the code for a token using PKCE &mdash; no client secret needed.
+                        </p>
+                        <ul class="code-info-list">
+                            <li class="code-info-item"><span class="code-info-dot"></span> Browser-based OAuth 2.0 with PKCE</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> App password support for CI/CD</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Auto-refreshes expired tokens</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> XDG-compliant credential storage</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right">
+                                <span class="code-filename">terminal</span>
+                                <button class="copy-btn" data-copy-code="auth-code" title="Copy code">
+                                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span class="copy-tooltip">Copied!</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="code-content" id="auth-code">
+<pre><span class="cm"># OAuth login (default) — opens your browser</span>
+<span class="cmd">bb auth login</span>
+
+<span class="cm"># Check current auth status</span>
+<span class="cmd">bb auth status</span>
+
+<span class="cm"># Print stored token</span>
+<span class="cmd">bb auth token</span>
+
+<span class="cm"># Refresh an expired token</span>
+<span class="cmd">bb auth refresh</span>
+
+<span class="cm"># Logout</span>
+<span class="cmd">bb auth logout</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== COMMANDS ==================== -->
+        <section class="section" id="commands">
+            <div class="section-label reveal">Command Reference</div>
+            <h2 class="section-title reveal">Every command at your fingertips</h2>
+            <p class="section-desc reveal">
+                Comprehensive coverage of Bitbucket Cloud features organized into intuitive command groups.
+            </p>
+
+            <div class="tabs-bar reveal" id="commands-tabs">
+                <button class="tab-btn tab-btn-active" data-tab="cmd-core">Core</button>
+                <button class="tab-btn" data-tab="cmd-workflow">Workflow</button>
+                <button class="tab-btn" data-tab="cmd-infra">CI/CD &amp; Branches</button>
+                <button class="tab-btn" data-tab="cmd-util">Utilities</button>
+            </div>
+
+            <!-- Core Commands -->
+            <div class="tab-content tab-content-active" data-tab-content="cmd-core">
+                <div class="cmd-grid">
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+                            Authentication
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb auth login</span><span class="cmd-desc">OAuth login (opens browser)</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb auth logout</span><span class="cmd-desc">Remove stored credentials</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb auth status</span><span class="cmd-desc">View auth status</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb auth token</span><span class="cmd-desc">Print stored auth token</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb auth refresh</span><span class="cmd-desc">Refresh OAuth access token</span></div>
+                    </div>
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div>
+                            Repositories
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo list</span><span class="cmd-desc">List repositories</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo view</span><span class="cmd-desc">View repository details</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo create &lt;name&gt;</span><span class="cmd-desc">Create a new repository</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo clone &lt;repo&gt;</span><span class="cmd-desc">Clone a repository</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo fork &lt;repo&gt;</span><span class="cmd-desc">Fork a repository</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo delete &lt;repo&gt;</span><span class="cmd-desc">Delete a repository</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo commits</span><span class="cmd-desc">List recent commits</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb repo diff</span><span class="cmd-desc">View a diff</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow -->
+            <div class="tab-content" data-tab-content="cmd-workflow">
+                <div class="cmd-grid">
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 012 2v7"/><path d="M6 9v12"/></svg></div>
+                            Pull Requests
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr create</span><span class="cmd-desc">Create a pull request</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr list</span><span class="cmd-desc">List pull requests</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr view &lt;id&gt;</span><span class="cmd-desc">View PR details</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr merge &lt;id&gt;</span><span class="cmd-desc">Merge a pull request</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr approve &lt;id&gt;</span><span class="cmd-desc">Approve a pull request</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr unapprove &lt;id&gt;</span><span class="cmd-desc">Remove approval</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr decline &lt;id&gt;</span><span class="cmd-desc">Decline a pull request</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr diff &lt;id&gt;</span><span class="cmd-desc">View the diff</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr comment &lt;id&gt;</span><span class="cmd-desc">Add a comment (inline supported)</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr comments &lt;id&gt;</span><span class="cmd-desc">List comments</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr activity &lt;id&gt;</span><span class="cmd-desc">View activity log</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pr edit &lt;id&gt;</span><span class="cmd-desc">Edit PR properties</span></div>
+                    </div>
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg></div>
+                            Issues
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue create</span><span class="cmd-desc">Create a new issue</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue list</span><span class="cmd-desc">List issues</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue view &lt;id&gt;</span><span class="cmd-desc">View issue details</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue edit &lt;id&gt;</span><span class="cmd-desc">Edit an issue</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue delete &lt;id&gt;</span><span class="cmd-desc">Delete an issue</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue comment &lt;id&gt;</span><span class="cmd-desc">Add a comment</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue comments &lt;id&gt;</span><span class="cmd-desc">List comments</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue vote &lt;id&gt;</span><span class="cmd-desc">Vote on an issue</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb issue watch &lt;id&gt;</span><span class="cmd-desc">Watch an issue</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CI/CD & Branches -->
+            <div class="tab-content" data-tab-content="cmd-infra">
+                <div class="cmd-grid">
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-cyan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg></div>
+                            CI/CD Pipelines
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline list</span><span class="cmd-desc">List pipelines</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline view &lt;id&gt;</span><span class="cmd-desc">View pipeline details</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline trigger</span><span class="cmd-desc">Trigger a new pipeline</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline stop &lt;id&gt;</span><span class="cmd-desc">Stop running pipeline</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline steps &lt;id&gt;</span><span class="cmd-desc">List pipeline steps</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline log &lt;id&gt;</span><span class="cmd-desc">View step log output</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb pipeline watch &lt;id&gt;</span><span class="cmd-desc">Watch pipeline status</span></div>
+                    </div>
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-pink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 009 9"/></svg></div>
+                            Branches &amp; Tags
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch list</span><span class="cmd-desc">List branches</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch create &lt;name&gt;</span><span class="cmd-desc">Create a branch</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch delete &lt;name&gt;</span><span class="cmd-desc">Delete a branch</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch tags</span><span class="cmd-desc">List tags</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch tag-create</span><span class="cmd-desc">Create a tag</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch tag-delete</span><span class="cmd-desc">Delete a tag</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb branch restrictions</span><span class="cmd-desc">List branch restrictions</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Utilities -->
+            <div class="tab-content" data-tab-content="cmd-util">
+                <div class="cmd-grid">
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-accent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>
+                            Workspaces &amp; Users
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb workspace list</span><span class="cmd-desc">List workspaces</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb workspace view</span><span class="cmd-desc">View workspace details</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb workspace members</span><span class="cmd-desc">List members</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb workspace projects</span><span class="cmd-desc">List projects</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb workspace permissions</span><span class="cmd-desc">List permissions</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb user me</span><span class="cmd-desc">Show current user</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb user view &lt;user&gt;</span><span class="cmd-desc">View a user profile</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb user ssh-keys</span><span class="cmd-desc">List SSH keys</span></div>
+                    </div>
+                    <div class="glass-card cmd-group-card">
+                        <div class="cmd-group-title">
+                            <div class="cmd-group-icon feature-icon-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+                            Snippets, Config &amp; More
+                        </div>
+                        <div class="cmd-item"><span class="cmd-name">bb snippet list</span><span class="cmd-desc">List snippets</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb snippet create</span><span class="cmd-desc">Create a snippet</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb snippet view &lt;id&gt;</span><span class="cmd-desc">View a snippet</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb config view</span><span class="cmd-desc">Show configuration</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb config set-default-workspace</span><span class="cmd-desc">Set default workspace</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb completion &lt;shell&gt;</span><span class="cmd-desc">Generate shell completions</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb mcp serve</span><span class="cmd-desc">Start MCP server for AI tools</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb upgrade</span><span class="cmd-desc">Upgrade bb to latest</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Global flags note -->
+            <div class="glass-card reveal" style="padding: var(--sp-5) var(--sp-6); margin-top: var(--sp-8);">
+                <p style="font-size: var(--text-sm); color: var(--text-secondary);">
+                    <strong style="color: var(--text-primary);">Repository Argument:</strong>
+                    Most commands accept a <code style="color: var(--accent); font-size: var(--text-xs); margin: 0 var(--sp-1);">workspace/repo-slug</code> positional argument.
+                    When omitted, bb auto-detects the repository from the current git remote.
+                    Use <code style="font-size: var(--text-xs); color: var(--text-muted);">--json</code> on any list command for machine-readable output.
+                </p>
+            </div>
+        </section>
+
+        <!-- ==================== EXAMPLES ==================== -->
+        <section class="section" id="examples">
+            <div class="section-label reveal">Examples</div>
+            <h2 class="section-title reveal">Real-world workflows</h2>
+            <p class="section-desc reveal">
+                Common patterns for day-to-day Bitbucket usage, straight from the terminal.
+            </p>
+
+            <div class="tabs-bar reveal" id="examples-tabs">
+                <button class="tab-btn tab-btn-active" data-tab="ex-pr">PR Workflow</button>
+                <button class="tab-btn" data-tab="ex-ci">CI/CD</button>
+                <button class="tab-btn" data-tab="ex-issues">Issues</button>
+                <button class="tab-btn" data-tab="ex-advanced">Advanced</button>
+            </div>
+
+            <!-- PR Workflow -->
+            <div class="tab-content tab-content-active reveal" data-tab-content="ex-pr">
+                <div class="code-layout">
+                    <div>
+                        <h3 class="code-info-title">Complete PR Workflow</h3>
+                        <p class="code-info-desc">
+                            Create, review, comment on, and merge a pull request &mdash; all without leaving the terminal.
+                        </p>
+                        <ul class="code-info-list">
+                            <li class="code-info-item"><span class="code-info-dot"></span> Create PRs with auto-fetched default reviewers</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Add inline comments on specific files and lines</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> View diffs and activity logs</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Approve and merge with a single command</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right">
+                                <span class="code-filename">terminal</span>
+                                <button class="copy-btn" data-copy-code="pr-code" title="Copy code">
+                                    <svg class="icon-clipboard" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                                    <svg class="icon-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                    <span class="copy-tooltip">Copied!</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="code-content" id="pr-code">
+<pre><span class="cm"># Create a pull request from current branch</span>
+<span class="cmd">bb pr create --title "Add user authentication" \
+  --description "Implements OAuth2 login flow" \
+  --reviewer @bob</span>
+
+<span class="cm"># List open PRs</span>
+<span class="cmd">bb pr list --state OPEN</span>
+
+<span class="cm"># View PR details and diff</span>
+<span class="cmd">bb pr view 42</span>
+<span class="cmd">bb pr diff 42</span>
+
+<span class="cm"># Leave an inline comment on the diff</span>
+<span class="cmd">bb pr comment 42 --body "Consider refactoring this" \
+  --file "src/auth.go" --line 57</span>
+
+<span class="cm"># Approve and merge</span>
+<span class="cmd">bb pr approve 42</span>
+<span class="cmd">bb pr merge 42</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CI/CD -->
+            <div class="tab-content" data-tab-content="ex-ci">
+                <div class="code-layout">
+                    <div>
+                        <h3 class="code-info-title">CI/CD Pipeline Monitoring</h3>
+                        <p class="code-info-desc">
+                            Trigger, monitor, and debug CI/CD pipelines without opening the Bitbucket web UI.
+                        </p>
+                        <ul class="code-info-list">
+                            <li class="code-info-item"><span class="code-info-dot"></span> Trigger pipelines on any branch</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Watch pipeline status in real-time</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Debug failed steps with log output</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right"><span class="code-filename">terminal</span></div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cm"># Trigger a pipeline on main</span>
+<span class="cmd">bb pipeline trigger --branch main</span>
+
+<span class="cm"># List recent pipelines</span>
+<span class="cmd">bb pipeline list</span>
+
+<span class="cm"># Watch pipeline progress in real-time</span>
+<span class="cmd">bb pipeline watch 187</span>
+
+<span class="cm"># Debug a failed step</span>
+<span class="cmd">bb pipeline steps 187</span>
+<span class="cmd">bb pipeline log 187 --step 3</span>
+
+<span class="cm"># Stop a running pipeline</span>
+<span class="cmd">bb pipeline stop 187</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Issues -->
+            <div class="tab-content" data-tab-content="ex-issues">
+                <div class="code-layout">
+                    <div>
+                        <h3 class="code-info-title">Issue Tracking</h3>
+                        <p class="code-info-desc">
+                            Manage bugs, features, and tasks from the command line &mdash; create, edit, comment, and close issues.
+                        </p>
+                        <ul class="code-info-list">
+                            <li class="code-info-item"><span class="code-info-dot"></span> Create issues with priorities</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Filter issues by state</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Vote and watch issues</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right"><span class="code-filename">terminal</span></div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cm"># Create a bug report</span>
+<span class="cmd">bb issue create --title "Login page broken on Safari" \
+  --kind bug --priority critical</span>
+
+<span class="cm"># List open issues</span>
+<span class="cmd">bb issue list --state open</span>
+
+<span class="cm"># Add a comment and vote</span>
+<span class="cmd">bb issue comment 42 --body "Fixed in PR #99"</span>
+<span class="cmd">bb issue vote 42</span>
+
+<span class="cm"># Edit and close</span>
+<span class="cmd">bb issue edit 42 --state resolved</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced -->
+            <div class="tab-content" data-tab-content="ex-advanced">
+                <div class="code-layout">
+                    <div>
+                        <h3 class="code-info-title">Advanced Usage</h3>
+                        <p class="code-info-desc">
+                            Work with workspaces, manage branches, JSON output for scripting, and AI agent integration.
+                        </p>
+                        <ul class="code-info-list">
+                            <li class="code-info-item"><span class="code-info-dot"></span> Target any workspace/repo</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> JSON output for scripting</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> Branch and tag management</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> MCP server for AI agents</li>
+                        </ul>
+                    </div>
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dots"><div class="code-dot"></div><div class="code-dot"></div><div class="code-dot"></div></div>
+                            <div class="code-header-right"><span class="code-filename">terminal</span></div>
+                        </div>
+                        <div class="code-content">
+<pre><span class="cm"># Target a specific workspace/repo</span>
+<span class="cmd">bb pr list myteam/backend-api</span>
+<span class="cmd">bb repo view myteam/frontend</span>
+
+<span class="cm"># JSON output for scripting</span>
+<span class="cmd">bb pr list --json | jq '.[].title'</span>
+
+<span class="cm"># Branch management</span>
+<span class="cmd">bb branch create feature/auth --target main</span>
+<span class="cmd">bb branch tags myteam/backend-api</span>
+
+<span class="cm"># Start MCP server for AI agents</span>
+<span class="cmd">bb mcp serve</span>
+
+<span class="cm"># Self-update to latest version</span>
+<span class="cmd">bb upgrade</span></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== CONFIGURATION ==================== -->
+        <section class="section" id="config">
+            <div class="section-label reveal">Configuration</div>
+            <h2 class="section-title reveal">Fully customizable</h2>
+            <p class="section-desc reveal">
+                Configuration stored in <code style="color: var(--accent);">~/.config/bb/</code> following XDG conventions.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4);" class="reveal">
+                <div class="glass-card config-card">
+                    <h3 class="config-title">Config Commands</h3>
+                    <table class="config-table">
+                        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+                        <tbody>
+                            <tr><td>bb config view</td><td>Show current configuration</td></tr>
+                            <tr><td>bb config set-default-workspace</td><td>Set your default workspace</td></tr>
+                            <tr><td>bb config set-format</td><td>Set output format (table/json)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="glass-card config-card">
+                    <h3 class="config-title">Token Storage</h3>
+                    <table class="config-table">
+                        <thead><tr><th>File</th><th>Description</th></tr></thead>
+                        <tbody>
+                            <tr><td>token.json</td><td>OAuth access &amp; refresh tokens</td></tr>
+                            <tr><td>config.json</td><td>Default workspace &amp; preferences</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="glass-card config-card reveal" style="margin-top: var(--sp-4);">
+                <h3 class="config-title">Shell Completions</h3>
+                <table class="config-table">
+                    <thead><tr><th>Shell</th><th>Setup</th></tr></thead>
+                    <tbody>
+                        <tr><td>Bash</td><td>source &lt;(bb completion bash)</td></tr>
+                        <tr><td>Zsh</td><td>source &lt;(bb completion zsh)</td></tr>
+                        <tr><td>Fish</td><td>bb completion fish | source</td></tr>
+                        <tr><td>PowerShell</td><td>bb completion powershell | Out-String | Invoke-Expression</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ==================== FOOTER ==================== -->
+        <footer class="footer">
+            <div class="footer-inner">
+                <div class="footer-brand">
+                    <div class="footer-brand-name">
+                        <div class="nav-logo-icon">B</div>
+                        bb CLI
+                    </div>
+                    <p class="footer-brand-text">Bitbucket Cloud from the command line.</p>
+                    <div class="footer-badges">
+                        <span class="footer-badge">MIT License</span>
+                        <span class="footer-badge">Written in Go</span>
+                        <span class="footer-badge">Open Source</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-col-title">Resources</div>
+                    <div class="footer-col-links">
+                        <a href="https://github.com/PhilipKram/Bitbucket-CLI" class="footer-link" target="_blank" rel="noopener">GitHub</a>
+                        <a href="https://github.com/PhilipKram/Bitbucket-CLI/releases" class="footer-link" target="_blank" rel="noopener">Releases</a>
+                        <a href="https://github.com/PhilipKram/Bitbucket-CLI/issues" class="footer-link" target="_blank" rel="noopener">Issues</a>
+                    </div>
+                </div>
+                <div>
+                    <div class="footer-col-title">Sections</div>
+                    <div class="footer-col-links">
+                        <a href="#features" class="footer-link">Features</a>
+                        <a href="#install" class="footer-link">Install</a>
+                        <a href="#commands" class="footer-link">Commands</a>
+                        <a href="#examples" class="footer-link">Examples</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom container">
+                <span class="footer-copyright">bb CLI &mdash; MIT License</span>
+                <button class="back-to-top" id="back-to-top">
+                    Back to top
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            /* ---- Mobile nav ---- */
+            var hamburger = document.getElementById('nav-hamburger');
+            var overlay = document.getElementById('nav-overlay');
+            var mobile = document.getElementById('nav-mobile');
+            var navOpen = false;
+
+            function toggleNav(open) {
+                navOpen = typeof open === 'boolean' ? open : !navOpen;
+                hamburger.classList.toggle('nav-hamburger-open', navOpen);
+                overlay.classList.toggle('nav-overlay-visible', navOpen);
+                mobile.classList.toggle('nav-mobile-open', navOpen);
+                document.body.classList.toggle('body-locked', navOpen);
+            }
+
+            hamburger.addEventListener('click', function() { toggleNav(); });
+            overlay.addEventListener('click', function() { toggleNav(false); });
+            document.querySelectorAll('[data-mobile-link]').forEach(function(link) {
+                link.addEventListener('click', function() { toggleNav(false); });
+            });
+
+            /* ---- Navbar scroll ---- */
+            var navbar = document.getElementById('navbar');
+            window.addEventListener('scroll', function() {
+                navbar.classList.toggle('nav-scrolled', window.scrollY > 20);
+            }, { passive: true });
+
+            /* ---- Active section indicator ---- */
+            var navLinks = document.querySelectorAll('[data-nav]');
+            var sections = [];
+            navLinks.forEach(function(link) {
+                var id = link.getAttribute('href').slice(1);
+                var el = document.getElementById(id);
+                if (el) sections.push({ id: id, el: el, link: link });
+            });
+
+            var sectionObserver = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    if (entry.isIntersecting) {
+                        navLinks.forEach(function(l) { l.classList.remove('nav-link-active'); });
+                        sections.forEach(function(s) {
+                            if (s.el === entry.target) s.link.classList.add('nav-link-active');
+                        });
+                    }
+                });
+            }, { threshold: 0.2, rootMargin: '-64px 0px -40% 0px' });
+
+            sections.forEach(function(s) { sectionObserver.observe(s.el); });
+
+            /* ---- Scroll reveal ---- */
+            var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            var revealEls = document.querySelectorAll('.reveal');
+
+            if (prefersReduced) {
+                revealEls.forEach(function(el) { el.classList.add('reveal-visible'); });
+            } else {
+                var revealObserver = new IntersectionObserver(function(entries) {
+                    entries.forEach(function(entry) {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('reveal-visible');
+                            revealObserver.unobserve(entry.target);
+                        }
+                    });
+                }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+                revealEls.forEach(function(el) { revealObserver.observe(el); });
+            }
+
+            /* ---- Counter animation ---- */
+            var counters = document.querySelectorAll('[data-count]');
+            var counterObserver = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    if (!entry.isIntersecting) return;
+                    var el = entry.target;
+                    var target = parseInt(el.getAttribute('data-count'), 10);
+                    var start = 0;
+                    var duration = 1200;
+                    var startTime = null;
+
+                    function step(ts) {
+                        if (!startTime) startTime = ts;
+                        var progress = Math.min((ts - startTime) / duration, 1);
+                        var ease = 1 - Math.pow(1 - progress, 3);
+                        el.textContent = Math.round(start + (target - start) * ease);
+                        if (progress < 1) requestAnimationFrame(step);
+                    }
+
+                    if (prefersReduced) {
+                        el.textContent = target;
+                    } else {
+                        requestAnimationFrame(step);
+                    }
+                    counterObserver.unobserve(el);
+                });
+            }, { threshold: 0.5 });
+
+            counters.forEach(function(c) { counterObserver.observe(c); });
+
+            /* ---- Tabs ---- */
+            document.querySelectorAll('.tabs-bar').forEach(function(bar) {
+                var btns = bar.querySelectorAll('.tab-btn');
+                btns.forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var tabId = btn.getAttribute('data-tab');
+                        btns.forEach(function(b) { b.classList.remove('tab-btn-active'); });
+                        btn.classList.add('tab-btn-active');
+
+                        var parent = bar.parentElement;
+                        parent.querySelectorAll('.tab-content').forEach(function(tc) {
+                            tc.classList.remove('tab-content-active');
+                        });
+                        var target = parent.querySelector('[data-tab-content="' + tabId + '"]');
+                        if (target) target.classList.add('tab-content-active');
+                    });
+                });
+            });
+
+            /* ---- Copy to clipboard ---- */
+            document.querySelectorAll('[data-copy]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var text = btn.getAttribute('data-copy');
+                    navigator.clipboard.writeText(text).then(function() {
+                        showCopied(btn);
+                    });
+                });
+            });
+
+            document.querySelectorAll('[data-copy-code]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    var id = btn.getAttribute('data-copy-code');
+                    var block = document.getElementById(id);
+                    if (!block) return;
+                    var text = block.textContent;
+                    navigator.clipboard.writeText(text).then(function() {
+                        showCopied(btn);
+                    });
+                });
+            });
+
+            function showCopied(btn) {
+                btn.classList.add('copy-btn-copied');
+                setTimeout(function() {
+                    btn.classList.remove('copy-btn-copied');
+                }, 2000);
+            }
+
+            /* ---- Smooth scroll ---- */
+            document.querySelectorAll('a[href^="#"]').forEach(function(anchor) {
+                anchor.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    var target = document.querySelector(this.getAttribute('href'));
+                    if (target) {
+                        target.scrollIntoView({ behavior: prefersReduced ? 'auto' : 'smooth', block: 'start' });
+                    }
+                });
+            });
+
+            /* ---- Back to top ---- */
+            document.getElementById('back-to-top').addEventListener('click', function() {
+                window.scrollTo({ top: 0, behavior: prefersReduced ? 'auto' : 'smooth' });
+            });
+        })();
+    </script>
 </body>
 </html>
