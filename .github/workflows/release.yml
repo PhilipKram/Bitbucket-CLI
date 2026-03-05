@@ -69,13 +69,24 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           RELEASE_URL="https://github.com/PhilipKram/Bitbucket-CLI/releases/tag/${VERSION}"
 
-          # Extract release notes from the GitHub release (populated by GoReleaser)
+          # Extract release notes and clean up for Teams card:
+          # - Strip commit hashes (40-char hex prefixes)
+          # - Remove markdown headers (## Changelog, ## What's Changed, etc.)
+          # - Remove empty lines and clean up bullet formatting
+          # - Trim to 1000 chars for Adaptive Card limits
           RELEASE_NOTES=$(gh release view "${VERSION}" --json body --jq '.body' 2>/dev/null || echo "")
 
-          # Convert markdown release notes to plain text for Teams card
-          # Trim to 1000 chars to stay within Adaptive Card limits
           if [ -n "$RELEASE_NOTES" ]; then
-            CHANGELOG=$(echo "$RELEASE_NOTES" | head -40 | sed 's/"/\\"/g; s/$/\\n/' | tr -d '\n')
+            CHANGELOG=$(echo "$RELEASE_NOTES" \
+              | sed 's/^[a-f0-9]\{7,40\} //' \
+              | sed 's/^\* [a-f0-9]\{7,40\} /* /' \
+              | grep -v '^## ' \
+              | grep -v '^Changelog$' \
+              | grep -v '^$' \
+              | sed 's/^\* /• /' \
+              | head -15 \
+              | sed 's/"/\\"/g; s/$/\\n/' \
+              | tr -d '\n')
             if [ ${#CHANGELOG} -gt 1000 ]; then
               CHANGELOG="${CHANGELOG:0:997}..."
             fi
@@ -85,6 +96,15 @@ jobs:
 
           # Count release assets
           ASSET_COUNT=$(gh release view "${VERSION}" --json assets --jq '.assets | length' 2>/dev/null || echo "0")
+
+          # Get previous tag for comparison
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${VERSION}$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list --count "${PREV_TAG}..${VERSION}" 2>/dev/null || echo "?")
+            COMPARE_INFO="${COMMIT_COUNT} commits since ${PREV_TAG}"
+          else
+            COMPARE_INFO="Initial release"
+          fi
 
           curl -s -X POST "$TEAMS_WEBHOOK_URL" \
             -H "Content-Type: application/json" \
@@ -111,35 +131,58 @@ jobs:
                       "spacing": "Medium"
                     },
                     {
-                      "type": "FactSet",
-                      "facts": [
-                        { "title": "Project", "value": "bb (Bitbucket CLI)" },
-                        { "title": "Version", "value": "'"${VERSION}"'" },
-                        { "title": "Assets", "value": "'"${ASSET_COUNT}"' artifacts" }
+                      "type": "ColumnSet",
+                      "columns": [
+                        {
+                          "type": "Column",
+                          "width": "auto",
+                          "items": [
+                            {
+                              "type": "TextBlock",
+                              "text": "'"${COMPARE_INFO}"'",
+                              "isSubtle": true,
+                              "size": "Small"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "Column",
+                          "width": "auto",
+                          "items": [
+                            {
+                              "type": "TextBlock",
+                              "text": "📦 '"${ASSET_COUNT}"' artifacts",
+                              "isSubtle": true,
+                              "size": "Small"
+                            }
+                          ]
+                        }
                       ]
                     },
                     {
                       "type": "TextBlock",
-                      "text": "**Changelog**",
+                      "text": "**What'"'"'s Changed**",
                       "weight": "Bolder",
-                      "spacing": "Medium"
+                      "spacing": "Medium",
+                      "separator": true
                     },
                     {
                       "type": "TextBlock",
                       "text": "'"${CHANGELOG}"'",
                       "wrap": true,
-                      "maxLines": 20
+                      "size": "Small",
+                      "spacing": "Small"
                     }
                   ],
                   "actions": [
                     {
                       "type": "Action.OpenUrl",
-                      "title": "View Release",
+                      "title": "📋 View Release",
                       "url": "'"${RELEASE_URL}"'"
                     },
                     {
                       "type": "Action.OpenUrl",
-                      "title": "Download",
+                      "title": "⬇️ Download",
                       "url": "'"${RELEASE_URL}"'#assets"
                     }
                   ]
