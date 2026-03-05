@@ -7,8 +7,27 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 )
+
+// ResourceHandler is a function that handles reading a resource by URI.
+type ResourceHandler func(uri string) (*ResourceReadResult, error)
+
+// RegisteredResource combines a resource template with its handler function.
+type RegisteredResource struct {
+	Template ResourceTemplate
+	Handler  ResourceHandler
+}
+
+// PromptHandler is a function that handles a prompt get request.
+type PromptHandler func(args map[string]string) (*PromptGetResult, error)
+
+// RegisteredPrompt combines a prompt definition with its handler function.
+type RegisteredPrompt struct {
+	Prompt  Prompt
+	Handler PromptHandler
+}
 
 // Server implements an MCP (Model Context Protocol) server that communicates
 // via JSON-RPC 2.0 over stdio (stdin/stdout).
@@ -19,6 +38,9 @@ type Server struct {
 
 	handlersMu sync.RWMutex
 	handlers   map[string]RequestHandler
+
+	resources map[string]*RegisteredResource
+	prompts   map[string]*RegisteredPrompt
 
 	// Server info
 	name        string
@@ -41,6 +63,8 @@ func NewServer(name, version, description string) *Server {
 		reader:      bufio.NewReader(os.Stdin),
 		writer:      bufio.NewWriter(os.Stdout),
 		handlers:    make(map[string]RequestHandler),
+		resources:   make(map[string]*RegisteredResource),
+		prompts:     make(map[string]*RegisteredPrompt),
 		name:        name,
 		version:     version,
 		description: description,
@@ -61,6 +85,8 @@ func NewServerWith(reader io.Reader, writer io.Writer, name, version, descriptio
 		reader:      bufio.NewReader(reader),
 		writer:      bufio.NewWriter(writer),
 		handlers:    make(map[string]RequestHandler),
+		resources:   make(map[string]*RegisteredResource),
+		prompts:     make(map[string]*RegisteredPrompt),
 		name:        name,
 		version:     version,
 		description: description,
@@ -80,12 +106,26 @@ func (s *Server) RegisterHandler(method string, handler RequestHandler) {
 	s.handlers[method] = handler
 }
 
+// AddResourceTemplate registers a resource template with its handler.
+func (s *Server) AddResourceTemplate(template ResourceTemplate, handler ResourceHandler) {
+	s.resources[template.Name] = &RegisteredResource{Template: template, Handler: handler}
+}
+
+// AddPrompt registers a prompt with its handler.
+func (s *Server) AddPrompt(prompt Prompt, handler PromptHandler) {
+	s.prompts[prompt.Name] = &RegisteredPrompt{Prompt: prompt, Handler: handler}
+}
+
 // registerBuiltinHandlers registers the core MCP protocol handlers.
 func (s *Server) registerBuiltinHandlers() {
 	s.RegisterHandler("initialize", s.handleInitialize)
 	s.RegisterHandler("initialized", s.handleInitialized)
 	s.RegisterHandler("tools/list", s.handleToolsList)
 	s.RegisterHandler("tools/call", s.handleToolsCall)
+	s.RegisterHandler("resources/list", s.handleResourcesList)
+	s.RegisterHandler("resources/read", s.handleResourcesRead)
+	s.RegisterHandler("prompts/list", s.handlePromptsList)
+	s.RegisterHandler("prompts/get", s.handlePromptsGet)
 }
 
 // Start begins listening for JSON-RPC requests on stdin and processing them.
@@ -206,6 +246,8 @@ func (s *Server) handleInitialize(req *Request) (map[string]interface{}, error) 
 			Tools: &ToolsCapability{
 				ListChanged: false,
 			},
+			Resources: &ResourcesCapability{},
+			Prompts:   &PromptsCapability{},
 		},
 		ServerInfo: Implementation{
 			Name:        s.name,
@@ -280,6 +322,210 @@ func (s *Server) handleToolsCall(req *Request) (map[string]interface{}, error) {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal tool call result: %w", err)
+	}
+
+	var resultMap map[string]interface{}
+	if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+	}
+
+	return resultMap, nil
+}
+
+// handleResourcesList handles the resources/list request.
+func (s *Server) handleResourcesList(req *Request) (map[string]interface{}, error) {
+	templates := make([]ResourceTemplate, 0, len(s.resources))
+	for _, r := range s.resources {
+		templates = append(templates, r.Template)
+	}
+
+	result := ResourcesListResult{
+		ResourceTemplates: templates,
+	}
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal resources list: %w", err)
+	}
+
+	var resultMap map[string]interface{}
+	if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+	}
+
+	return resultMap, nil
+}
+
+// handleResourcesRead handles the resources/read request.
+func (s *Server) handleResourcesRead(req *Request) (map[string]interface{}, error) {
+	if req.Params == nil {
+		return nil, fmt.Errorf("missing params for resources/read request")
+	}
+
+	rawURI, ok := req.Params["uri"]
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter: uri")
+	}
+
+	uri, ok := rawURI.(string)
+	if !ok || uri == "" {
+		return nil, fmt.Errorf("missing required parameter: uri")
+	}
+
+	// Try each registered resource handler
+	for _, r := range s.resources {
+		if matchesTemplate(r.Template.URITemplate, uri) {
+			result, err := r.Handler(uri)
+			if err != nil {
+				return nil, err
+			}
+
+			resultBytes, err := json.Marshal(result)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal resource read result: %w", err)
+			}
+
+			var resultMap map[string]interface{}
+			if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+			}
+
+			return resultMap, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no resource handler found for URI: %s", uri)
+}
+
+// matchesTemplate checks if a URI matches a URI template pattern by comparing
+// all static segments between placeholders against the corresponding URI segments.
+func matchesTemplate(template, uri string) bool {
+	// Split template into static and placeholder parts.
+	// E.g., "bitbucket:///{workspace}/{repo}/pr/{id}/diff" produces
+	// static segments: ["bitbucket:///", "/", "/pr/", "/diff"]
+	// We check that the URI matches all static segments in order,
+	// with any non-empty string allowed for placeholder positions.
+	tIdx := 0
+	uIdx := 0
+
+	for tIdx < len(template) {
+		if template[tIdx] == '{' {
+			// Skip past the placeholder in the template
+			end := strings.IndexByte(template[tIdx:], '}')
+			if end == -1 {
+				return false
+			}
+			tIdx += end + 1
+
+			// In the URI, consume characters until the next static segment (or end)
+			if tIdx < len(template) {
+				// Find the next static segment in the template
+				nextBrace := strings.IndexByte(template[tIdx:], '{')
+				var nextStatic string
+				if nextBrace == -1 {
+					nextStatic = template[tIdx:]
+				} else {
+					nextStatic = template[tIdx : tIdx+nextBrace]
+				}
+				if nextStatic != "" {
+					pos := strings.Index(uri[uIdx:], nextStatic)
+					if pos == -1 || pos == 0 {
+						return false // placeholder must match at least one char
+					}
+					uIdx += pos
+				}
+			} else {
+				// Placeholder is at the end; URI must have at least one more char
+				if uIdx >= len(uri) {
+					return false
+				}
+				uIdx = len(uri)
+			}
+		} else {
+			// Static segment: find next placeholder (or end)
+			nextBrace := strings.IndexByte(template[tIdx:], '{')
+			var staticPart string
+			if nextBrace == -1 {
+				staticPart = template[tIdx:]
+				tIdx = len(template)
+			} else {
+				staticPart = template[tIdx : tIdx+nextBrace]
+				tIdx += nextBrace
+			}
+
+			if !strings.HasPrefix(uri[uIdx:], staticPart) {
+				return false
+			}
+			uIdx += len(staticPart)
+		}
+	}
+
+	return uIdx == len(uri)
+}
+
+// handlePromptsList handles the prompts/list request.
+func (s *Server) handlePromptsList(req *Request) (map[string]interface{}, error) {
+	prompts := make([]Prompt, 0, len(s.prompts))
+	for _, p := range s.prompts {
+		prompts = append(prompts, p.Prompt)
+	}
+
+	result := PromptsListResult{
+		Prompts: prompts,
+	}
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal prompts list: %w", err)
+	}
+
+	var resultMap map[string]interface{}
+	if err := json.Unmarshal(resultBytes, &resultMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal result map: %w", err)
+	}
+
+	return resultMap, nil
+}
+
+// handlePromptsGet handles the prompts/get request.
+func (s *Server) handlePromptsGet(req *Request) (map[string]interface{}, error) {
+	if req == nil || req.Params == nil {
+		return nil, fmt.Errorf("missing parameters")
+	}
+
+	rawName, ok := req.Params["name"]
+	if !ok {
+		return nil, fmt.Errorf("missing required parameter: name")
+	}
+
+	name, ok := rawName.(string)
+	if !ok || name == "" {
+		return nil, fmt.Errorf("missing required parameter: name")
+	}
+
+	rp, exists := s.prompts[name]
+	if !exists {
+		return nil, fmt.Errorf("prompt not found: %s", name)
+	}
+
+	// Extract arguments from params
+	args := make(map[string]string)
+	if argsRaw, ok := req.Params["arguments"].(map[string]interface{}); ok {
+		for k, v := range argsRaw {
+			if str, ok := v.(string); ok {
+				args[k] = str
+			}
+		}
+	}
+
+	result, err := rp.Handler(args)
+	if err != nil {
+		return nil, fmt.Errorf("prompt handler error: %w", err)
+	}
+
+	resultBytes, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal prompt result: %w", err)
 	}
 
 	var resultMap map[string]interface{}

@@ -74,6 +74,9 @@ func NewCmdPipeline() *cobra.Command {
 	cmd.AddCommand(newCmdSteps())
 	cmd.AddCommand(newCmdLog())
 	cmd.AddCommand(newCmdWatch())
+	cmd.AddCommand(newCmdStats())
+	cmd.AddCommand(newCmdTrends())
+	cmd.AddCommand(newCmdSlowest())
 
 	return cmd
 }

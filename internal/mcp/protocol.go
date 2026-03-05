@@ -229,6 +229,67 @@ type Resource struct {
 	Annotations *Annotations `json:"annotations,omitempty"`
 }
 
+// Prompt Types
+
+// Prompt represents an MCP prompt template.
+type Prompt struct {
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Arguments   []PromptArgument `json:"arguments,omitempty"`
+}
+
+// PromptArgument describes an argument for a prompt.
+type PromptArgument struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+}
+
+// PromptMessage represents a message in a prompt result.
+type PromptMessage struct {
+	Role    string  `json:"role"` // "user" or "assistant"
+	Content Content `json:"content"`
+}
+
+// PromptsListResult is the result of prompts/list.
+type PromptsListResult struct {
+	Prompts []Prompt `json:"prompts"`
+}
+
+// PromptGetResult is the result of prompts/get.
+type PromptGetResult struct {
+	Description string          `json:"description,omitempty"`
+	Messages    []PromptMessage `json:"messages"`
+}
+
+// Resource Types
+
+// ResourceTemplate describes a template for dynamically generated resources.
+type ResourceTemplate struct {
+	URITemplate string `json:"uriTemplate"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// ResourceContents represents the contents of a read resource.
+type ResourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+	Blob     string `json:"blob,omitempty"`
+}
+
+// ResourcesListResult is the result of resources/list.
+type ResourcesListResult struct {
+	ResourceTemplates []ResourceTemplate `json:"resourceTemplates"`
+}
+
+// ResourceReadResult is the result of resources/read.
+type ResourceReadResult struct {
+	Contents []ResourceContents `json:"contents"`
+}
+
 // Helper Functions
 
 // NewRequest creates a new JSON-RPC request with the given method and params.

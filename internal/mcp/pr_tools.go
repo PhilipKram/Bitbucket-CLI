@@ -174,6 +174,228 @@ func PRCreateHandler(ctx context.Context, args map[string]interface{}) ([]Conten
 	return []Content{NewTextContent(string(result))}, nil
 }
 
+// PRApproveHandler handles the pr_approve tool invocation.
+func PRApproveHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Approve pull request
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/approve", repository, prID)
+	data, err := client.Post(path, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to approve pull request: %w", err)
+	}
+
+	return []Content{NewTextContent(string(data))}, nil
+}
+
+// PRMergeHandler handles the pr_merge tool invocation.
+func PRMergeHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	// Extract optional parameters
+	mergeStrategy, _ := args["merge_strategy"].(string)
+	closeBranch := false
+	if cb, ok := args["close_source_branch"].(bool); ok {
+		closeBranch = cb
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Build request body
+	body := map[string]interface{}{}
+	if mergeStrategy != "" {
+		body["merge_strategy"] = mergeStrategy
+	}
+	if closeBranch {
+		body["close_source_branch"] = true
+	}
+
+	jsonBody := ""
+	if len(body) > 0 {
+		bodyBytes, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		jsonBody = string(bodyBytes)
+	}
+
+	// Merge pull request
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/merge", repository, prID)
+	data, err := client.Post(path, jsonBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge pull request: %w", err)
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal merged pull request: %w", err)
+	}
+
+	result, err := json.Marshal(pr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pull request: %w", err)
+	}
+
+	return []Content{NewTextContent(string(result))}, nil
+}
+
+// PRDeclineHandler handles the pr_decline tool invocation.
+func PRDeclineHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Decline pull request
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/decline", repository, prID)
+	data, err := client.Post(path, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to decline pull request: %w", err)
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal declined pull request: %w", err)
+	}
+
+	result, err := json.Marshal(pr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pull request: %w", err)
+	}
+
+	return []Content{NewTextContent(string(result))}, nil
+}
+
+// PRDiffHandler handles the pr_diff tool invocation.
+func PRDiffHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Fetch pull request diff (returns plain text)
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/diff", repository, prID)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pull request diff: %w", err)
+	}
+
+	return []Content{NewTextContent(string(data))}, nil
+}
+
+// PRCommentHandler handles the pr_comment tool invocation.
+func PRCommentHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	content, ok := args["content"].(string)
+	if !ok || content == "" {
+		return nil, fmt.Errorf("content parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Build request body
+	body := map[string]interface{}{
+		"content": map[string]string{
+			"raw": content,
+		},
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	// Create comment
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/comments", repository, prID)
+	data, err := client.Post(path, string(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pull request comment: %w", err)
+	}
+
+	return []Content{NewTextContent(string(data))}, nil
+}
+
 // PullRequest represents a Bitbucket pull request.
 // This is copied from cmd/pr/pr.go to avoid circular dependencies.
 type PullRequest struct {

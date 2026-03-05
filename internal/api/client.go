@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -209,6 +210,59 @@ func (c *Client) Put(path string, jsonBody string) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	return handleResponse(resp)
+}
+
+// PostMultipart performs a multipart/form-data POST request, typically used for file uploads.
+// It streams the file content through an io.Pipe to avoid buffering the entire file in memory.
+func (c *Client) PostMultipart(path, fieldName, fileName string, fileReader io.Reader) ([]byte, error) {
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	// Write multipart data in a goroutine so the pipe reader can stream it
+	errCh := make(chan error, 1)
+	go func() {
+		defer pw.Close()
+		part, err := writer.CreateFormFile(fieldName, fileName)
+		if err != nil {
+			errCh <- fmt.Errorf("failed to create multipart form: %w", err)
+			return
+		}
+		if _, err := io.Copy(part, fileReader); err != nil {
+			errCh <- fmt.Errorf("failed to write file to multipart form: %w", err)
+			return
+		}
+		errCh <- writer.Close()
+	}()
+
+	u := config.BitbucketAPI + path
+	contentType := writer.FormDataContentType()
+
+	// Build the request manually since doRequest buffers the body (needed for 401 retry),
+	// but for large uploads we accept that a 401 retry will fail.
+	req, err := http.NewRequest("POST", u, pr)
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+	req.Header.Set("Content-Type", contentType)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, errors.NetworkError(err)
+	}
+	defer resp.Body.Close()
+
+	// Check for multipart writer errors
+	if writeErr := <-errCh; writeErr != nil {
+		return nil, writeErr
+	}
+
+	// Upload often returns 201 Created with no body
+	if resp.StatusCode == http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return body, nil
+	}
 	return handleResponse(resp)
 }
 

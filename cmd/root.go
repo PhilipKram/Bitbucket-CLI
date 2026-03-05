@@ -6,10 +6,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	apiCmd "github.com/PhilipKram/bitbucket-cli/cmd/api"
 	authCmd "github.com/PhilipKram/bitbucket-cli/cmd/auth"
 	branchCmd "github.com/PhilipKram/bitbucket-cli/cmd/branch"
+	browseCmd "github.com/PhilipKram/bitbucket-cli/cmd/browse"
 	completionCmd "github.com/PhilipKram/bitbucket-cli/cmd/completion"
 	configCmd "github.com/PhilipKram/bitbucket-cli/cmd/config"
+	downloadCmd "github.com/PhilipKram/bitbucket-cli/cmd/download"
+	environmentCmd "github.com/PhilipKram/bitbucket-cli/cmd/environment"
 	issueCmd "github.com/PhilipKram/bitbucket-cli/cmd/issue"
 	"github.com/PhilipKram/bitbucket-cli/internal/buildinfo"
 	"github.com/PhilipKram/bitbucket-cli/internal/update"
@@ -19,6 +23,7 @@ import (
 	repoCmd "github.com/PhilipKram/bitbucket-cli/cmd/repo"
 	snippetCmd "github.com/PhilipKram/bitbucket-cli/cmd/snippet"
 	userCmd "github.com/PhilipKram/bitbucket-cli/cmd/user"
+	variableCmd "github.com/PhilipKram/bitbucket-cli/cmd/variable"
 	workspaceCmd "github.com/PhilipKram/bitbucket-cli/cmd/workspace"
 )
 
@@ -81,6 +86,11 @@ func init() {
 	rootCmd.AddCommand(branchCmd.NewCmdBranch())
 	rootCmd.AddCommand(snippetCmd.NewCmdSnippet())
 	rootCmd.AddCommand(userCmd.NewCmdUser())
+	rootCmd.AddCommand(downloadCmd.NewCmdDownload())
+	rootCmd.AddCommand(variableCmd.NewCmdVariable())
+	rootCmd.AddCommand(environmentCmd.NewCmdEnvironment())
+	rootCmd.AddCommand(browseCmd.NewCmdBrowse())
+	rootCmd.AddCommand(apiCmd.NewCmdAPI())
 	rootCmd.AddCommand(configCmd.NewCmdConfig())
 	rootCmd.AddCommand(completionCmd.NewCmdCompletion())
 	rootCmd.AddCommand(mcpCmd.NewCmdMCP())

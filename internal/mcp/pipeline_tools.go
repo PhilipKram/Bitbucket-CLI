@@ -120,6 +120,90 @@ func PipelineTriggerHandler(ctx context.Context, args map[string]interface{}) ([
 	return []Content{NewTextContent(string(result))}, nil
 }
 
+// PipelineViewHandler handles the pipeline_view tool invocation.
+func PipelineViewHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	pipelineUUID, ok := args["pipeline_uuid"].(string)
+	if !ok || pipelineUUID == "" {
+		return nil, fmt.Errorf("pipeline_uuid parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Fetch pipeline
+	path := fmt.Sprintf("/repositories/%s/pipelines/%s", repository, pipelineUUID)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pipeline: %w", err)
+	}
+
+	var pipeline Pipeline
+	if err := json.Unmarshal(data, &pipeline); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal pipeline: %w", err)
+	}
+
+	// Convert to JSON
+	result, err := json.Marshal(pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pipeline: %w", err)
+	}
+
+	return []Content{NewTextContent(string(result))}, nil
+}
+
+// PipelineStopHandler handles the pipeline_stop tool invocation.
+func PipelineStopHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	// Extract required parameters
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	pipelineUUID, ok := args["pipeline_uuid"].(string)
+	if !ok || pipelineUUID == "" {
+		return nil, fmt.Errorf("pipeline_uuid parameter is required")
+	}
+
+	// Create API client
+	client, err := api.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	// Stop pipeline
+	path := fmt.Sprintf("/repositories/%s/pipelines/%s/stopPipeline", repository, pipelineUUID)
+	_, err = client.Post(path, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to stop pipeline: %w", err)
+	}
+
+	result := map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("Pipeline %s stopped successfully", pipelineUUID),
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal result: %w", err)
+	}
+
+	return []Content{NewTextContent(string(data))}, nil
+}
+
 // Pipeline represents a Bitbucket pipeline.
 // This is copied from cmd/pipeline/pipeline.go to avoid circular dependencies.
 type Pipeline struct {
