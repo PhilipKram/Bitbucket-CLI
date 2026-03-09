@@ -43,7 +43,7 @@ jobs:
         run: |
           if [ -z "$HOMEBREW_TOKEN" ]; then
             echo "HOMEBREW_TAP_TOKEN not set, skipping homebrew formula publish"
-            echo "args=release --clean --skip=brews" >> "$GITHUB_OUTPUT"
+            echo "args=release --clean --skip=homebrew" >> "$GITHUB_OUTPUT"
           else
             echo "args=release --clean" >> "$GITHUB_OUTPUT"
           fi
