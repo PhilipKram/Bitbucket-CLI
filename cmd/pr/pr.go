@@ -89,6 +89,8 @@ func newCmdList() *cobra.Command {
 	var state string
 	var page int
 	var jsonOut bool
+	var reviewer string
+	var author string
 
 	cmd := &cobra.Command{
 		Use:   "list <workspace/repo-slug>",
@@ -102,6 +104,42 @@ func newCmdList() *cobra.Command {
 			path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=25&page=%d", args[0], page)
 			if state != "" {
 				path += "&state=" + url.QueryEscape(strings.ToUpper(state))
+			}
+			var filters []string
+			if reviewer != "" {
+				if reviewer == "me" {
+					userData, err := client.Get("/user")
+					if err != nil {
+						return fmt.Errorf("failed to fetch current user: %w", err)
+					}
+					var user struct {
+						UUID string `json:"uuid"`
+					}
+					if err := json.Unmarshal(userData, &user); err != nil {
+						return err
+					}
+					reviewer = user.UUID
+				}
+				filters = append(filters, fmt.Sprintf(`reviewers.uuid="%s"`, reviewer))
+			}
+			if author != "" {
+				if author == "me" {
+					userData, err := client.Get("/user")
+					if err != nil {
+						return fmt.Errorf("failed to fetch current user: %w", err)
+					}
+					var user struct {
+						UUID string `json:"uuid"`
+					}
+					if err := json.Unmarshal(userData, &user); err != nil {
+						return err
+					}
+					author = user.UUID
+				}
+				filters = append(filters, fmt.Sprintf(`author.uuid="%s"`, author))
+			}
+			if len(filters) > 0 {
+				path += "&q=" + url.QueryEscape(strings.Join(filters, " AND "))
 			}
 			data, err := client.Get(path)
 			if err != nil {
@@ -146,6 +184,8 @@ func newCmdList() *cobra.Command {
 	cmd.Flags().StringVarP(&state, "state", "s", "", "Filter by state (OPEN, MERGED, DECLINED, SUPERSEDED)")
 	cmd.Flags().IntVarP(&page, "page", "p", 1, "Page number")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.Flags().StringVar(&reviewer, "reviewer", "", `Filter by reviewer (UUID or "me" for yourself)`)
+	cmd.Flags().StringVar(&author, "author", "", `Filter by author (UUID or "me" for yourself)`)
 	cmd.ValidArgsFunction = completion.RepositoryNamesWithDescriptions
 	return cmd
 }
