@@ -102,10 +102,10 @@ func newCmdList() *cobra.Command {
 				return err
 			}
 			path := fmt.Sprintf("/repositories/%s/pullrequests?pagelen=25&page=%d", args[0], page)
-			if state != "" {
-				path += "&state=" + url.QueryEscape(strings.ToUpper(state))
-			}
 			var filters []string
+			if state != "" {
+				filters = append(filters, fmt.Sprintf(`state="%s"`, strings.ToUpper(state)))
+			}
 			if reviewer != "" {
 				if reviewer == "me" {
 					userData, err := client.Get("/user")
