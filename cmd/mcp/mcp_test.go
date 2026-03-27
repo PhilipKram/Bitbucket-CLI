@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,23 +118,11 @@ func TestIntegration_MCP_StatusFlags(t *testing.T) {
 	}
 }
 
-// TestBBBinaryPath tests the bbBinaryPath helper function.
-func TestBBBinaryPath(t *testing.T) {
-	path := bbBinaryPath()
-	if path == "" {
-		t.Error("bbBinaryPath returned empty string")
-	}
-	// Should return an absolute path or "bb" as fallback
-	if path != "bb" && !filepath.IsAbs(path) {
-		t.Errorf("Expected absolute path or 'bb', got %s", path)
-	}
-}
-
-// TestMCPConfigJSON tests the mcpConfigJSON helper function.
-func TestMCPConfigJSON(t *testing.T) {
-	configJSON, err := mcpConfigJSON("/usr/local/bin/bb")
+// TestMCPDockerConfigJSON tests the mcpDockerConfigJSON helper function.
+func TestMCPDockerConfigJSON(t *testing.T) {
+	configJSON, err := mcpDockerConfigJSON("bb-mcp:latest")
 	if err != nil {
-		t.Fatalf("mcpConfigJSON failed: %v", err)
+		t.Fatalf("mcpDockerConfigJSON failed: %v", err)
 	}
 
 	var config map[string]interface{}
@@ -139,16 +130,34 @@ func TestMCPConfigJSON(t *testing.T) {
 		t.Fatalf("Failed to parse config JSON: %v", err)
 	}
 
-	if config["command"] != "/usr/local/bin/bb" {
-		t.Errorf("Expected command '/usr/local/bin/bb', got %v", config["command"])
+	if config["command"] != "docker" {
+		t.Errorf("Expected command 'docker', got %v", config["command"])
 	}
 
 	args, ok := config["args"].([]interface{})
 	if !ok {
 		t.Fatal("Expected args to be an array")
 	}
-	if len(args) != 2 || args[0] != "mcp" || args[1] != "serve" {
-		t.Errorf("Expected args ['mcp', 'serve'], got %v", args)
+	if len(args) != 6 || args[0] != "run" || args[1] != "-i" || args[2] != "--rm" || args[3] != "bb-mcp:latest" || args[4] != "mcp" || args[5] != "serve" {
+		t.Errorf("Expected args ['run', '-i', '--rm', 'bb-mcp:latest', 'mcp', 'serve'], got %v", args)
+	}
+}
+
+// TestMCPDockerConfigJSON_DefaultImage tests with the default image name.
+func TestMCPDockerConfigJSON_DefaultImage(t *testing.T) {
+	configJSON, err := mcpDockerConfigJSON(DefaultDockerImage)
+	if err != nil {
+		t.Fatalf("mcpDockerConfigJSON failed: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		t.Fatalf("Failed to parse config JSON: %v", err)
+	}
+
+	args := config["args"].([]interface{})
+	if args[3] != DefaultDockerImage {
+		t.Errorf("Expected image %q, got %v", DefaultDockerImage, args[3])
 	}
 }
 
@@ -172,9 +181,11 @@ func TestClaudeDesktopConfigPath(t *testing.T) {
 	}
 }
 
-// TestRunInstallUnsupportedClient tests install with an unsupported client.
+// TestRunInstallUnsupportedClient tests install with an unsupported client via command.
 func TestRunInstallUnsupportedClient(t *testing.T) {
-	err := runInstall("unsupported-client", "user")
+	cmd := NewCmdMCP()
+	cmd.SetArgs([]string{"install", "--client", "unsupported-client"})
+	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("Expected error for unsupported client")
 	}
@@ -205,20 +216,13 @@ func TestRunStatusUnsupportedClient(t *testing.T) {
 	}
 }
 
-// TestInstallClaudeDesktop tests installing bb in Claude Desktop config.
-func TestInstallClaudeDesktop(t *testing.T) {
-	// Create a temporary directory to simulate Claude Desktop config
-	tmpDir := t.TempDir()
-	configDir := filepath.Join(tmpDir, "Claude")
-	configPath := filepath.Join(configDir, "claude_desktop_config.json")
-
-	// We can't easily override claudeDesktopConfigPath, so test the JSON logic directly
-	bbPath := "/usr/local/bin/bb"
+// TestInstallClaudeDesktopDockerConfig tests the Docker MCP config format for Claude Desktop.
+func TestInstallClaudeDesktopDockerConfig(t *testing.T) {
 	config := make(map[string]interface{})
 	mcpServers := make(map[string]interface{})
 	mcpServers["bb"] = map[string]interface{}{
-		"command": bbPath,
-		"args":    []string{"mcp", "serve"},
+		"command": "docker",
+		"args":    []string{"run", "-i", "--rm", "bb-mcp", "mcp", "serve"},
 	}
 	config["mcpServers"] = mcpServers
 
@@ -227,15 +231,12 @@ func TestInstallClaudeDesktop(t *testing.T) {
 		t.Fatalf("Failed to marshal config: %v", err)
 	}
 
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatalf("Failed to create config dir: %v", err)
-	}
-
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "claude_desktop_config.json")
 	if err := os.WriteFile(configPath, output, 0o644); err != nil {
 		t.Fatalf("Failed to write config file: %v", err)
 	}
 
-	// Read back and verify
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("Failed to read config file: %v", err)
@@ -256,8 +257,59 @@ func TestInstallClaudeDesktop(t *testing.T) {
 		t.Fatal("Expected bb entry in mcpServers")
 	}
 
-	if bbConfig["command"] != "/usr/local/bin/bb" {
-		t.Errorf("Expected command '/usr/local/bin/bb', got %v", bbConfig["command"])
+	if bbConfig["command"] != "docker" {
+		t.Errorf("Expected command 'docker', got %v", bbConfig["command"])
+	}
+}
+
+// TestInstallClaudeDesktopRemoteConfig tests the remote HTTP MCP config format for Claude Desktop.
+func TestInstallClaudeDesktopRemoteConfig(t *testing.T) {
+	config := make(map[string]interface{})
+	mcpServers := make(map[string]interface{})
+
+	url := fmt.Sprintf("http://%s:%d%s", "myhost.example.com", 9090, "/mcp")
+	entry := map[string]interface{}{
+		"url": url,
+		"headers": map[string]string{
+			"Authorization": "Bearer test-token",
+		},
+	}
+	mcpServers["bb"] = entry
+	config["mcpServers"] = mcpServers
+
+	output, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "claude_desktop_config.json")
+	if err := os.WriteFile(configPath, output, 0o644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config file: %v", err)
+	}
+
+	var readConfig map[string]interface{}
+	if err := json.Unmarshal(data, &readConfig); err != nil {
+		t.Fatalf("Failed to parse config: %v", err)
+	}
+
+	servers, ok := readConfig["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected mcpServers in config")
+	}
+
+	bbConfig, ok := servers["bb"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected bb entry in mcpServers")
+	}
+
+	if bbConfig["url"] != "http://myhost.example.com:9090/mcp" {
+		t.Errorf("Expected url 'http://myhost.example.com:9090/mcp', got %v", bbConfig["url"])
 	}
 }
 
@@ -725,5 +777,455 @@ func TestIntegration_MCP_ToolRegistryValidation(t *testing.T) {
 		t.Error("Expected error when registering tool with nil handler")
 	} else if !strings.Contains(err.Error(), "handler cannot be nil") {
 		t.Errorf("Expected 'handler cannot be nil' error, got: %v", err)
+	}
+}
+
+// --- HTTP Transport Tests ---
+
+// TestIntegration_MCP_ServeFlags tests the serve subcommand has HTTP transport flags.
+func TestIntegration_MCP_ServeFlags(t *testing.T) {
+	cmd := NewCmdMCP()
+	serveCmd, _, err := cmd.Find([]string{"serve"})
+	if err != nil {
+		t.Fatalf("Failed to find serve subcommand: %v", err)
+	}
+
+	expectedFlags := map[string]string{
+		"transport": "stdio",
+		"port":      "8080",
+		"host":      "localhost",
+		"token":     "",
+		"no-auth":   "false",
+		"base-path": "/mcp",
+	}
+
+	for name, defVal := range expectedFlags {
+		flag := serveCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Errorf("Expected --%s flag on serve command", name)
+			continue
+		}
+		if flag.DefValue != defVal {
+			t.Errorf("Expected default value %q for --%s, got %q", defVal, name, flag.DefValue)
+		}
+	}
+}
+
+// TestIntegration_MCP_InstallHTTPFlags tests the install subcommand has HTTP transport flags.
+func TestIntegration_MCP_InstallHTTPFlags(t *testing.T) {
+	cmd := NewCmdMCP()
+	installCmd, _, err := cmd.Find([]string{"install"})
+	if err != nil {
+		t.Fatalf("Failed to find install subcommand: %v", err)
+	}
+
+	httpFlags := []string{"transport", "docker-image", "host", "port", "base-path", "token"}
+	for _, name := range httpFlags {
+		if installCmd.Flags().Lookup(name) == nil {
+			t.Errorf("Expected --%s flag on install command", name)
+		}
+	}
+}
+
+// TestMCPRemoteConfigJSON tests the mcpRemoteConfigJSON helper function.
+func TestMCPRemoteConfigJSON(t *testing.T) {
+	// With token
+	configJSON, err := mcpRemoteConfigJSON("myhost.example.com", 9090, "/mcp", "secret-token")
+	if err != nil {
+		t.Fatalf("mcpRemoteConfigJSON failed: %v", err)
+	}
+
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &cfg); err != nil {
+		t.Fatalf("Failed to parse config JSON: %v", err)
+	}
+
+	if cfg["url"] != "http://myhost.example.com:9090/mcp" {
+		t.Errorf("Expected url 'http://myhost.example.com:9090/mcp', got %v", cfg["url"])
+	}
+
+	headers, ok := cfg["headers"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected headers in config")
+	}
+	if headers["Authorization"] != "Bearer secret-token" {
+		t.Errorf("Expected 'Bearer secret-token', got %v", headers["Authorization"])
+	}
+
+	// Without token
+	configJSON, err = mcpRemoteConfigJSON("localhost", 8080, "/mcp", "")
+	if err != nil {
+		t.Fatalf("mcpRemoteConfigJSON failed: %v", err)
+	}
+
+	var cfg2 map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &cfg2); err != nil {
+		t.Fatalf("Failed to parse config JSON: %v", err)
+	}
+
+	if _, ok := cfg2["headers"]; ok {
+		t.Error("Expected no headers when token is empty")
+	}
+}
+
+// TestBearerAuthMiddleware tests the bearer token authentication middleware.
+func TestBearerAuthMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	handler := bearerAuthMiddleware(inner, "test-token-123")
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantStatus int
+	}{
+		{"valid token", "Bearer test-token-123", http.StatusOK},
+		{"wrong token", "Bearer wrong-token", http.StatusUnauthorized},
+		{"no auth header", "", http.StatusUnauthorized},
+		{"basic auth instead", "Basic dXNlcjpwYXNz", http.StatusUnauthorized},
+		{"empty bearer", "Bearer ", http.StatusUnauthorized},
+		{"bearer prefix only", "Bearer", http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/mcp", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			rec := httptest.NewRecorder()
+
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// TestGenerateToken tests that generateToken produces valid tokens.
+func TestGenerateToken(t *testing.T) {
+	token1, err := generateToken()
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+
+	if len(token1) != 64 {
+		t.Errorf("Expected 64-char token, got %d chars", len(token1))
+	}
+
+	// Tokens should be unique
+	token2, err := generateToken()
+	if err != nil {
+		t.Fatalf("generateToken failed: %v", err)
+	}
+	if token1 == token2 {
+		t.Error("Expected unique tokens, got identical ones")
+	}
+}
+
+// TestMCPTokenPersistence tests saving and loading MCP tokens.
+func TestMCPTokenPersistence(t *testing.T) {
+	// Use a temp dir as config dir
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	token := "test-persist-token-abc123"
+	if err := saveMCPToken(token); err != nil {
+		t.Fatalf("saveMCPToken failed: %v", err)
+	}
+
+	loaded := loadMCPToken()
+	if loaded != token {
+		t.Errorf("loadMCPToken = %q, want %q", loaded, token)
+	}
+}
+
+// TestMCPTokenPersistence_Missing tests loading a non-existent token.
+func TestMCPTokenPersistence_Missing(t *testing.T) {
+	// Use a fresh temp dir with no token file written
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "bitbucket-cli", "mcp_token")
+
+	// Directly test that reading a non-existent file returns empty
+	data, err := os.ReadFile(path)
+	if err == nil {
+		t.Fatalf("Expected error reading non-existent file, got data: %q", string(data))
+	}
+}
+
+// TestHTTPHandler_InitializeRequest tests the HTTP handler with an initialize request.
+func TestHTTPHandler_InitializeRequest(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test server")
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, &mcp.HTTPHandlerOptions{})
+
+	initReq := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]interface{}{
+			"protocolVersion": "2025-11-25",
+			"clientInfo": map[string]interface{}{
+				"name":    "test-client",
+				"version": "1.0.0",
+			},
+		},
+	}
+	body, _ := json.Marshal(initReq)
+
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if resp["jsonrpc"] != "2.0" {
+		t.Errorf("Expected jsonrpc '2.0', got %v", resp["jsonrpc"])
+	}
+
+	result, ok := resp["result"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result in response")
+	}
+
+	if result["protocolVersion"] != "2025-11-25" {
+		t.Errorf("Expected protocolVersion '2025-11-25', got %v", result["protocolVersion"])
+	}
+
+	serverInfo, ok := result["serverInfo"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected serverInfo in result")
+	}
+	if serverInfo["name"] != "bb-mcp" {
+		t.Errorf("Expected server name 'bb-mcp', got %v", serverInfo["name"])
+	}
+}
+
+// TestHTTPHandler_MethodNotAllowed tests that non-POST requests are rejected.
+func TestHTTPHandler_MethodNotAllowed(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test")
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	for _, method := range []string{"GET", "PUT", "DELETE", "PATCH"} {
+		req := httptest.NewRequest(method, "/mcp", nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s: status = %d, want %d", method, rec.Code, http.StatusMethodNotAllowed)
+		}
+	}
+}
+
+// TestHTTPHandler_EmptyBody tests that empty POST body is rejected.
+func TestHTTPHandler_EmptyBody(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test")
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(nil))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+// TestHTTPHandler_NilServer tests that nil server factory result returns 401.
+func TestHTTPHandler_NilServer(t *testing.T) {
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return nil
+	}, nil)
+
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestHTTPHandler_ToolsListRequest tests listing tools via HTTP.
+func TestHTTPHandler_ToolsListRequest(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test")
+
+	// Register a test tool
+	registry := mcp.NewToolRegistry()
+	testTool := mcp.Tool{
+		Name:        "test_tool",
+		Description: "A test tool",
+		InputSchema: mcp.NewJSONSchema("object", map[string]interface{}{}, []string{}),
+	}
+	registry.Register(testTool, func(ctx context.Context, args map[string]interface{}) ([]mcp.Content, error) {
+		return []mcp.Content{mcp.NewTextContent("test")}, nil
+	})
+	server.SetRegistry(registry)
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	listReq := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      2,
+		"method":  "tools/list",
+	}
+	body, _ := json.Marshal(listReq)
+
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp map[string]interface{}
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+
+	result, ok := resp["result"].(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected result in response")
+	}
+
+	tools, ok := result["tools"].([]interface{})
+	if !ok {
+		t.Fatal("Expected tools array in result")
+	}
+
+	if len(tools) != 1 {
+		t.Errorf("Expected 1 tool, got %d", len(tools))
+	}
+}
+
+// TestHTTPHandler_SSE tests Server-Sent Events response format.
+func TestHTTPHandler_SSE(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test")
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	initReq := map[string]interface{}{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params":  map[string]interface{}{},
+	}
+	body, _ := json.Marshal(initReq)
+
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader(body))
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want %q", contentType, "text/event-stream")
+	}
+
+	respBody := rec.Body.String()
+	if !strings.HasPrefix(respBody, "event: message\ndata: ") {
+		t.Errorf("Expected SSE format, got: %s", respBody)
+	}
+
+	// Extract the JSON data from the SSE event
+	dataLine := strings.TrimPrefix(respBody, "event: message\ndata: ")
+	dataLine = strings.TrimSuffix(dataLine, "\n\n")
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal([]byte(dataLine), &resp); err != nil {
+		t.Fatalf("Failed to parse SSE data as JSON: %v; data: %s", err, dataLine)
+	}
+
+	if resp["jsonrpc"] != "2.0" {
+		t.Errorf("Expected jsonrpc '2.0' in SSE data")
+	}
+}
+
+// TestHTTPHandler_InvalidJSON tests handling of invalid JSON input.
+func TestHTTPHandler_InvalidJSON(t *testing.T) {
+	server := mcp.NewServerWith(bytes.NewReader(nil), io.Discard, "bb-mcp", "1.0.0", "Test")
+
+	handler := mcp.NewHTTPHandler(func(r *http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	req := httptest.NewRequest("POST", "/mcp", bytes.NewReader([]byte("not json")))
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Should return a JSON-RPC error response (parse error)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (JSON-RPC errors use 200)", rec.Code, http.StatusOK)
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if resp["error"] == nil {
+		t.Error("Expected error in response for invalid JSON")
+	}
+}
+
+// TestServeUnsupportedTransport tests that an unsupported transport returns an error.
+func TestServeUnsupportedTransport(t *testing.T) {
+	cmd := NewCmdMCP()
+	cmd.SetArgs([]string{"serve", "--transport", "grpc"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Expected error for unsupported transport")
+	}
+	if !strings.Contains(err.Error(), "unsupported transport") {
+		t.Errorf("Expected 'unsupported transport' error, got: %v", err)
+	}
+}
+
+// TestInstallUnsupportedClient tests install with unsupported client.
+func TestInstallUnsupportedClient(t *testing.T) {
+	cmd := NewCmdMCP()
+	cmd.SetArgs([]string{"install", "--client", "unsupported"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("Expected error for unsupported client")
+	}
+	if !strings.Contains(err.Error(), "unsupported client") {
+		t.Errorf("Expected 'unsupported client' error, got: %v", err)
 	}
 }

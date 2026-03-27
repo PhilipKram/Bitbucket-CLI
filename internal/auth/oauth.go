@@ -46,13 +46,19 @@ func isWSLFromProcVersion(path string) bool {
 	return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl")
 }
 
+// isDocker reports whether the process is running inside a Docker container.
+func isDocker() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
+}
+
 // Login performs the OAuth 2.0 Authorization Code flow.
 // It starts a local HTTP server to receive the callback, opens the browser
 // for user authorization, and exchanges the code for tokens.
 func Login(clientID, clientSecret string) (*config.TokenData, error) {
-	// In WSL, bind to 0.0.0.0 so the Windows browser can reach the callback server.
+	// In WSL or Docker, bind to 0.0.0.0 so the host browser can reach the callback server.
 	listenAddr := fmt.Sprintf("127.0.0.1:%d", OAuthCallbackPort)
-	if isWSL() {
+	if isWSL() || isDocker() {
 		listenAddr = fmt.Sprintf("0.0.0.0:%d", OAuthCallbackPort)
 	}
 	listener, err := net.Listen("tcp", listenAddr)
