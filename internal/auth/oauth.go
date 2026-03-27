@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -24,11 +25,37 @@ import (
 //	http://localhost:8817/callback
 const OAuthCallbackPort = 8817
 
+// procVersionPath is the path to /proc/version, overridable in tests.
+var procVersionPath = "/proc/version"
+
+// isWSL reports whether the current environment is Windows Subsystem for Linux.
+func isWSL() bool {
+	if runtime.GOOS != "linux" {
+		return false
+	}
+	return isWSLFromProcVersion(procVersionPath)
+}
+
+// isWSLFromProcVersion checks the given proc version file for WSL indicators.
+func isWSLFromProcVersion(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	lower := strings.ToLower(string(data))
+	return strings.Contains(lower, "microsoft") || strings.Contains(lower, "wsl")
+}
+
 // Login performs the OAuth 2.0 Authorization Code flow.
 // It starts a local HTTP server to receive the callback, opens the browser
 // for user authorization, and exchanges the code for tokens.
 func Login(clientID, clientSecret string) (*config.TokenData, error) {
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", OAuthCallbackPort))
+	// In WSL, bind to 0.0.0.0 so the Windows browser can reach the callback server.
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", OAuthCallbackPort)
+	if isWSL() {
+		listenAddr = fmt.Sprintf("0.0.0.0:%d", OAuthCallbackPort)
+	}
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return nil, &errors.BBError{
 			Message:    fmt.Sprintf("Failed to start local server on port %d", OAuthCallbackPort),
@@ -216,6 +243,10 @@ func openBrowser(url string) error {
 	case "darwin":
 		return exec.Command("open", url).Start()
 	case "linux":
+		// In WSL, use the Windows browser via cmd.exe.
+		if isWSL() {
+			return exec.Command("cmd.exe", "/c", "start", strings.ReplaceAll(url, "&", "^&")).Start()
+		}
 		return exec.Command("xdg-open", url).Start()
 	case "windows":
 		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()

@@ -50,9 +50,10 @@ func newCmdLogin() *cobra.Command {
 Before logging in, create an OAuth consumer in Bitbucket:
 
   1. Go to Bitbucket > Workspace settings > OAuth consumers > Add consumer
-  2. Set Callback URL to: http://localhost
-  3. Select the permissions (scopes) you need
-  4. Save and copy the Key (client ID) and Secret (client secret)
+  2. Check "This is a private consumer"
+  3. Set Callback URL to: http://localhost:8817/callback
+  4. Select the permissions (scopes) you need
+  5. Save and copy the Key (client ID) and Secret (client secret)
 
 When run interactively (no flags), you will be prompted for your OAuth
 consumer key and secret (or saved credentials will be used).
@@ -154,7 +155,8 @@ func loginOAuthInteractive(reader *bufio.Reader, clientID, clientSecret string) 
 		fmt.Println()
 		fmt.Println("Tip: Create an OAuth consumer at")
 		fmt.Println("  Bitbucket > Workspace settings > OAuth consumers > Add consumer")
-		fmt.Println("  Set callback URL to: http://localhost")
+		fmt.Println("  Check 'This is a private consumer'")
+		fmt.Println("  Set callback URL to: http://localhost:8817/callback")
 		fmt.Println()
 
 		if clientID == "" {
