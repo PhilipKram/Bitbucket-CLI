@@ -803,8 +803,8 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     </div>
                     <h3 class="feature-title">MCP Server</h3>
-                    <p class="feature-desc">Built-in Model Context Protocol server with 7 tools for AI integration. Works with Claude Desktop and Cursor.</p>
-                    <span class="feature-code">bb mcp serve</span>
+                    <p class="feature-desc">Built-in Model Context Protocol server with stdio and HTTP transports. Docker-ready with OAuth support. Works with Claude Code, Claude Desktop, and Cursor.</p>
+                    <span class="feature-code">bb mcp serve --transport http</span>
                 </div>
                 <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 8">
                     <div class="feature-icon feature-icon-purple">
@@ -1087,7 +1087,10 @@
                         <div class="cmd-item"><span class="cmd-name">bb config view</span><span class="cmd-desc">Show configuration</span></div>
                         <div class="cmd-item"><span class="cmd-name">bb config set-default-workspace</span><span class="cmd-desc">Set default workspace</span></div>
                         <div class="cmd-item"><span class="cmd-name">bb completion &lt;shell&gt;</span><span class="cmd-desc">Generate shell completions</span></div>
-                        <div class="cmd-item"><span class="cmd-name">bb mcp serve</span><span class="cmd-desc">Start MCP server for AI tools</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb mcp serve</span><span class="cmd-desc">Start MCP server (stdio or HTTP)</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb mcp install</span><span class="cmd-desc">Register bb in an AI client</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb mcp uninstall</span><span class="cmd-desc">Remove bb from an AI client</span></div>
+                        <div class="cmd-item"><span class="cmd-name">bb mcp status</span><span class="cmd-desc">Check MCP registration status</span></div>
                         <div class="cmd-item"><span class="cmd-name">bb upgrade</span><span class="cmd-desc">Upgrade bb to latest</span></div>
                     </div>
                 </div>
@@ -1261,7 +1264,7 @@
                             <li class="code-info-item"><span class="code-info-dot"></span> Target any workspace/repo</li>
                             <li class="code-info-item"><span class="code-info-dot"></span> JSON output for scripting</li>
                             <li class="code-info-item"><span class="code-info-dot"></span> Branch and tag management</li>
-                            <li class="code-info-item"><span class="code-info-dot"></span> MCP server for AI agents</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> MCP server with HTTP &amp; Docker</li>
                         </ul>
                     </div>
                     <div class="code-block">
@@ -1281,8 +1284,9 @@
 <span class="cmd">bb branch create feature/auth --target main</span>
 <span class="cmd">bb branch tags myteam/backend-api</span>
 
-<span class="cm"># Start MCP server for AI agents</span>
-<span class="cmd">bb mcp serve</span>
+<span class="cm"># Start MCP server (stdio or HTTP)</span>
+<span class="cmd">bb mcp serve --transport http</span>
+<span class="cmd">bb mcp install</span>
 
 <span class="cm"># Self-update to latest version</span>
 <span class="cmd">bb upgrade</span></pre>
