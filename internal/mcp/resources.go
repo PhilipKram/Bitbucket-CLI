@@ -1,11 +1,10 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
-
-	"github.com/PhilipKram/bitbucket-cli/internal/api"
 )
 
 // RegisterDefaultResources registers all default resource templates with the server.
@@ -36,13 +35,13 @@ func RegisterDefaultResources(s *Server) {
 }
 
 // handleReadmeResource reads the README.md from a repository.
-func handleReadmeResource(uri string) (*ResourceReadResult, error) {
+func handleReadmeResource(ctx context.Context, uri string) (*ResourceReadResult, error) {
 	repo, err := extractRepoFromResourceURI(uri)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func handleReadmeResource(uri string) (*ResourceReadResult, error) {
 }
 
 // handlePipelineStepLogResource reads the log output of a pipeline step.
-func handlePipelineStepLogResource(uri string) (*ResourceReadResult, error) {
+func handlePipelineStepLogResource(ctx context.Context, uri string) (*ResourceReadResult, error) {
 	repo, err := extractRepoFromResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -86,7 +85,7 @@ func handlePipelineStepLogResource(uri string) (*ResourceReadResult, error) {
 	pipelineUUID := parts[3]
 	stepUUID := parts[5]
 
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +114,7 @@ func handlePipelineStepLogResource(uri string) (*ResourceReadResult, error) {
 }
 
 // handlePRDiffResource reads the diff of a pull request.
-func handlePRDiffResource(uri string) (*ResourceReadResult, error) {
+func handlePRDiffResource(ctx context.Context, uri string) (*ResourceReadResult, error) {
 	repo, err := extractRepoFromResourceURI(uri)
 	if err != nil {
 		return nil, err
@@ -136,7 +135,7 @@ func handlePRDiffResource(uri string) (*ResourceReadResult, error) {
 
 	prID := parts[3]
 
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, err
 	}

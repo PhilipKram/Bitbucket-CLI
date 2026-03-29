@@ -69,6 +69,7 @@ func newCmdServe() *cobra.Command {
 		basePath     string
 		clientID     string
 		clientSecret string
+		externalURL  string
 	)
 
 	cmd := &cobra.Command{
@@ -80,22 +81,25 @@ Supports two transports:
   stdio  - Standard I/O (default), for use as a subprocess or Docker container
   http   - HTTP with Server-Sent Events, for remote/networked access
 
-Bitbucket authentication:
-  --client-id / --client-secret  OAuth credentials for Bitbucket API access.
-  When provided, the server runs the OAuth browser flow at startup to
-  obtain a token before serving MCP requests. This is designed for Docker
-  containers where the callback port (8817) is exposed to the host.
+Bitbucket authentication (in order of precedence):
+  --client-id + --client-secret  Per-user OAuth mode (recommended for shared servers)
+  BB_OAUTH_KEY + BB_OAUTH_SECRET env vars  Client credentials grant (ideal for Docker/CI)
+  Stored token                             From a previous 'bb auth login'
 
-HTTP authentication modes:
+OAuth mode (--client-id + --client-secret):
+  Runs as an OAuth authorization server proxy. Each user authenticates with
+  their own Bitbucket account via the browser. Sessions are persisted to disk.
+  MCP clients like Claude Code handle the OAuth flow automatically.
+
+HTTP authentication modes (non-OAuth):
   --token / auto-generated  Single shared bearer token (default)
   --no-auth                 Disable authentication (not recommended)`,
-		Example: `  # Start over stdio (default, used by Docker)
+		Example: `  # Start over stdio (default)
   $ bb mcp serve
 
-  # Start with Bitbucket OAuth (Docker)
-  $ docker run -it --rm -p 8817:8817 -p 8080:8080 bb-mcp \
-      mcp serve --transport http --host 0.0.0.0 --no-auth \
-      --client-id KEY --client-secret SECRET
+  # Docker with per-user OAuth (recommended for shared servers)
+  $ docker run -d --name bb-mcp -p 8080:8080 bb-mcp \
+      --client-id YOUR_KEY --client-secret YOUR_SECRET
 
   # Start as HTTP server with auto-generated token
   $ bb mcp serve --transport http
@@ -103,13 +107,6 @@ HTTP authentication modes:
   # Start on custom host and port
   $ bb mcp serve --transport http --host 0.0.0.0 --port 9090`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// If OAuth credentials provided, authenticate first
-			if clientID != "" && clientSecret != "" {
-				if err := authenticateBitbucket(clientID, clientSecret); err != nil {
-					return fmt.Errorf("Bitbucket authentication failed: %w", err)
-				}
-			}
-
 			switch transport {
 			case "stdio":
 				server, err := createMCPServer()
@@ -118,6 +115,12 @@ HTTP authentication modes:
 				}
 				return server.Start()
 			case "http":
+				// OAuth mode: per-user authentication
+				if clientID != "" && clientSecret != "" {
+					return serveHTTPOAuth(host, port, basePath, clientID, clientSecret, externalURL)
+				}
+
+				// Shared server mode
 				server, err := createMCPServer()
 				if err != nil {
 					return err
@@ -137,6 +140,7 @@ HTTP authentication modes:
 	cmd.Flags().StringVar(&basePath, "base-path", "/mcp", "HTTP endpoint path")
 	cmd.Flags().StringVar(&clientID, "client-id", "", "Bitbucket OAuth consumer key")
 	cmd.Flags().StringVar(&clientSecret, "client-secret", "", "Bitbucket OAuth consumer secret")
+	cmd.Flags().StringVar(&externalURL, "external-url", "", "External URL for OAuth redirects (e.g. http://localhost:8181)")
 
 	return cmd
 }
@@ -156,7 +160,14 @@ func authenticateBitbucket(clientID, clientSecret string) error {
 		return fmt.Errorf("failed to save OAuth credentials: %w", err)
 	}
 
-	// Run the OAuth browser flow
+	// If a token already exists (e.g. from a previous run with a persistent volume),
+	// skip the browser flow — the API client will refresh automatically.
+	if existing, loadErr := config.LoadToken(); loadErr == nil && existing.AccessToken != "" {
+		fmt.Fprintln(os.Stderr, "Found existing Bitbucket token, skipping OAuth flow.")
+		return nil
+	}
+
+	// Run the OAuth Authorization Code flow — prints a URL for the admin to open
 	fmt.Fprintln(os.Stderr, "Starting Bitbucket OAuth authentication...")
 	fmt.Fprintln(os.Stderr, "Open the URL below in your browser to authorize:")
 	fmt.Fprintln(os.Stderr)
@@ -314,14 +325,16 @@ const DefaultDockerImage = "bb-mcp"
 
 func newCmdInstall() *cobra.Command {
 	var (
-		scope      string
-		client     string
-		transport  string
-		host       string
-		port       int
-		basePath   string
-		token      string
+		scope       string
+		client      string
+		transport   string
+		host        string
+		port        int
+		basePath    string
+		token       string
 		dockerImage string
+		oauthKey    string
+		oauthSecret string
 	)
 
 	cmd := &cobra.Command{
@@ -338,30 +351,55 @@ Supports two transport modes:
   http   - Remote HTTP server
 
 For stdio transport, the MCP server runs as a Docker container.
+Use --oauth-key and --oauth-secret to save Bitbucket OAuth credentials
+to a secure env file (~/.config/bitbucket-cli/mcp.env). The Docker
+container reads this file via --env-file — credentials never appear
+in client configuration files.
+
 For http transport, the server must already be running.
 
 Supported scopes (claude-code only):
   user    - User-level configuration (default)
   local   - Local project configuration
   project - Project-level configuration`,
-		Example: `  # Install for Claude Code using Docker (default)
-  $ bb mcp install
+		Example: `  # Install for Claude Code with OAuth credentials (recommended)
+  $ bb mcp install --oauth-key YOUR_KEY --oauth-secret YOUR_SECRET
 
   # Install with a custom Docker image
-  $ bb mcp install --docker-image ghcr.io/myorg/bb-mcp:latest
+  $ bb mcp install --docker-image ghcr.io/myorg/bb-mcp:latest --oauth-key KEY --oauth-secret SECRET
 
   # Install for Claude Desktop using Docker
-  $ bb mcp install --client claude-desktop
+  $ bb mcp install --client claude-desktop --oauth-key KEY --oauth-secret SECRET
 
   # Install a remote HTTP MCP server
   $ bb mcp install --transport http --host myserver.example.com --port 8080 --token my-secret`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Save OAuth credentials to env file if provided
+			var envFilePath string
+			if oauthKey != "" && oauthSecret != "" {
+				var err error
+				envFilePath, err = saveMCPEnvFile(oauthKey, oauthSecret)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(os.Stderr, "OAuth credentials saved to %s\n", envFilePath)
+			} else if oauthKey != "" || oauthSecret != "" {
+				return fmt.Errorf("both --oauth-key and --oauth-secret are required")
+			} else {
+				// Check if env file already exists from a previous install
+				if path, err := mcpEnvFilePath(); err == nil {
+					if _, statErr := os.Stat(path); statErr == nil {
+						envFilePath = path
+					}
+				}
+			}
+
 			var configJSON string
 			var err error
 
 			switch transport {
 			case "stdio":
-				configJSON, err = mcpDockerConfigJSON(dockerImage)
+				configJSON, err = mcpDockerConfigJSON(dockerImage, envFilePath)
 				if err != nil {
 					return err
 				}
@@ -385,7 +423,7 @@ Supported scopes (claude-code only):
 				if transport == "http" {
 					return installClaudeDesktopRemote(host, port, basePath, token)
 				}
-				return installClaudeDesktopDocker(dockerImage)
+				return installClaudeDesktopDocker(dockerImage, envFilePath)
 			default:
 				return fmt.Errorf("unsupported client: %s (supported: claude-code, claude-desktop)", client)
 			}
@@ -396,6 +434,8 @@ Supported scopes (claude-code only):
 	cmd.Flags().StringVar(&client, "client", "claude-code", "AI client: claude-code or claude-desktop")
 	cmd.Flags().StringVar(&transport, "transport", "stdio", "Transport: stdio or http")
 	cmd.Flags().StringVar(&dockerImage, "docker-image", DefaultDockerImage, "Docker image for the MCP server")
+	cmd.Flags().StringVar(&oauthKey, "oauth-key", "", "Bitbucket OAuth consumer key (passed as BB_OAUTH_KEY to Docker)")
+	cmd.Flags().StringVar(&oauthSecret, "oauth-secret", "", "Bitbucket OAuth consumer secret (passed as BB_OAUTH_SECRET to Docker)")
 	cmd.Flags().StringVar(&host, "host", "localhost", "Remote MCP server host (http transport)")
 	cmd.Flags().IntVar(&port, "port", 8080, "Remote MCP server port (http transport)")
 	cmd.Flags().StringVar(&basePath, "base-path", "/mcp", "Remote MCP server endpoint path (http transport)")
@@ -446,11 +486,39 @@ Currently only supports claude-code.`,
 	return cmd
 }
 
+// mcpEnvFilePath returns the path to the MCP OAuth env file.
+func mcpEnvFilePath() (string, error) {
+	dir, err := config.ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "mcp.env"), nil
+}
+
+// saveMCPEnvFile writes OAuth credentials to an env file with restricted permissions.
+func saveMCPEnvFile(oauthKey, oauthSecret string) (string, error) {
+	path, err := mcpEnvFilePath()
+	if err != nil {
+		return "", fmt.Errorf("could not determine config directory: %w", err)
+	}
+	content := fmt.Sprintf("BB_OAUTH_KEY=%s\nBB_OAUTH_SECRET=%s\n", oauthKey, oauthSecret)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", fmt.Errorf("failed to write env file: %w", err)
+	}
+	return path, nil
+}
+
 // mcpDockerConfigJSON builds a Docker-based MCP server configuration JSON for stdio transport.
-func mcpDockerConfigJSON(image string) (string, error) {
+// OAuth credentials are read from the env file at envFilePath via --env-file.
+func mcpDockerConfigJSON(image, envFilePath string) (string, error) {
+	args := []string{"run", "-i", "--rm"}
+	if envFilePath != "" {
+		args = append(args, "--env-file", envFilePath)
+	}
+	args = append(args, image, "mcp", "serve")
 	cfg := map[string]interface{}{
 		"command": "docker",
-		"args":    []string{"run", "-i", "--rm", image, "mcp", "serve"},
+		"args":    args,
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
@@ -532,7 +600,7 @@ func installClaudeCode(scope, configJSON string) error {
 }
 
 // installClaudeDesktopDocker registers a Docker-based bb MCP server in Claude Desktop.
-func installClaudeDesktopDocker(image string) error {
+func installClaudeDesktopDocker(image, envFilePath string) error {
 	configPath, err := claudeDesktopConfigPath()
 	if err != nil {
 		return err
@@ -556,9 +624,14 @@ func installClaudeDesktopDocker(image string) error {
 		mcpServers = make(map[string]interface{})
 	}
 
+	args := []string{"run", "-i", "--rm"}
+	if envFilePath != "" {
+		args = append(args, "--env-file", envFilePath)
+	}
+	args = append(args, image, "mcp", "serve")
 	mcpServers["bb"] = map[string]interface{}{
 		"command": "docker",
-		"args":    []string{"run", "-i", "--rm", image, "mcp", "serve"},
+		"args":    args,
 	}
 	cfg["mcpServers"] = mcpServers
 

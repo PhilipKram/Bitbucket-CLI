@@ -29,7 +29,7 @@ func PRListHandler(ctx context.Context, args map[string]interface{}) ([]Content,
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -72,7 +72,7 @@ func PRViewHandler(ctx context.Context, args map[string]interface{}) ([]Content,
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -128,7 +128,7 @@ func PRCreateHandler(ctx context.Context, args map[string]interface{}) ([]Conten
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -191,7 +191,7 @@ func PRApproveHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -230,7 +230,7 @@ func PRMergeHandler(ctx context.Context, args map[string]interface{}) ([]Content
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -290,7 +290,7 @@ func PRDeclineHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -332,7 +332,7 @@ func PRDiffHandler(ctx context.Context, args map[string]interface{}) ([]Content,
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -369,7 +369,7 @@ func PRCommentHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}

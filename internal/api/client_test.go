@@ -1549,3 +1549,40 @@ func TestClient_PostForm_WithBitbucketAPI(t *testing.T) {
 		t.Error("expected ok=true")
 	}
 }
+
+func TestNewClientFromToken(t *testing.T) {
+	client := NewClientFromToken("my-access-token")
+	if client == nil {
+		t.Fatal("Expected client, got nil")
+	}
+
+	// Verify the token is set correctly by checking the auth header
+	// through a mock HTTP server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer my-access-token" {
+			t.Errorf("Expected 'Bearer my-access-token', got %s", auth)
+		}
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	// Use GetRaw with absolute URL to bypass BitbucketAPI const
+	data, err := client.GetRaw(server.URL + "/test")
+	if err != nil {
+		t.Fatalf("GetRaw failed: %v", err)
+	}
+	if !bytes.Contains(data, []byte("ok")) {
+		t.Error("Expected response to contain 'ok'")
+	}
+}
+
+func TestNewClientFromToken_NoRefresh(t *testing.T) {
+	// NewClientFromToken should have empty config (no refresh possible)
+	client := NewClientFromToken("token")
+	cfg := client.GetConfig()
+	if cfg.OAuthKey != "" || cfg.OAuthSecret != "" {
+		t.Error("Expected empty OAuth credentials on token-based client")
+	}
+}

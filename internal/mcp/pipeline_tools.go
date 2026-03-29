@@ -26,7 +26,7 @@ func PipelineListHandler(ctx context.Context, args map[string]interface{}) ([]Co
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -72,7 +72,7 @@ func PipelineTriggerHandler(ctx context.Context, args map[string]interface{}) ([
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -137,7 +137,7 @@ func PipelineViewHandler(ctx context.Context, args map[string]interface{}) ([]Co
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -180,7 +180,7 @@ func PipelineStopHandler(ctx context.Context, args map[string]interface{}) ([]Co
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}

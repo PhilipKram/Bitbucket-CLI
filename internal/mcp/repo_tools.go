@@ -69,7 +69,7 @@ func RepoListHandler(ctx context.Context, args map[string]interface{}) ([]Conten
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -104,7 +104,7 @@ func RepoViewHandler(ctx context.Context, args map[string]interface{}) ([]Conten
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -139,7 +139,7 @@ func SnippetListHandler(ctx context.Context, args map[string]interface{}) ([]Con
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -176,7 +176,7 @@ func SnippetViewHandler(ctx context.Context, args map[string]interface{}) ([]Con
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -220,7 +220,7 @@ func BranchListHandler(ctx context.Context, args map[string]interface{}) ([]Cont
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}

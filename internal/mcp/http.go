@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -78,6 +79,14 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	input := bytes.NewReader(append(body, '\n'))
 	var output bytes.Buffer
 
+	// Build a per-request context. If the request carries a Bearer token,
+	// attach it so tool handlers can create per-user API clients.
+	reqCtx := server.ctx
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		reqCtx = ContextWithToken(reqCtx, token)
+	}
+
 	// Create a temporary server with our custom reader/writer to process
 	// this single request through the existing JSON-RPC machinery.
 	tmpServer := &Server{
@@ -90,7 +99,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		version:     server.version,
 		description: server.description,
 		initialized: server.initialized,
-		ctx:         server.ctx,
+		ctx:         reqCtx,
 		cancel:      server.cancel,
 	}
 

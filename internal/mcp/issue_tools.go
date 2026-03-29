@@ -28,7 +28,7 @@ func IssueListHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -82,7 +82,7 @@ func IssueCreateHandler(ctx context.Context, args map[string]interface{}) ([]Con
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -142,7 +142,7 @@ func IssueViewHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -209,7 +209,7 @@ func IssueEditHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -257,7 +257,7 @@ func IssueDeleteHandler(ctx context.Context, args map[string]interface{}) ([]Con
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}
@@ -303,7 +303,7 @@ func IssueCommentHandler(ctx context.Context, args map[string]interface{}) ([]Co
 	}
 
 	// Create API client
-	client, err := api.NewClient()
+	client, err := GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API client: %w", err)
 	}

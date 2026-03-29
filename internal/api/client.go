@@ -39,7 +39,35 @@ type PaginatedResponse struct {
 }
 
 // NewClient creates an authenticated API client using OAuth Bearer tokens.
+//
+// Authentication is resolved in this order:
+//  1. BB_OAUTH_KEY + BB_OAUTH_SECRET env vars — obtains a token via the
+//     OAuth 2.0 client_credentials grant. Ideal for Docker and CI.
+//  2. Stored token from a previous 'bb auth login'.
 func NewClient() (*Client, error) {
+	timeout := defaultTimeout
+	if envTimeout := os.Getenv("BB_HTTP_TIMEOUT"); envTimeout != "" {
+		if secs, err := strconv.Atoi(envTimeout); err == nil && secs > 0 {
+			timeout = time.Duration(secs) * time.Second
+		}
+	}
+
+	// If OAuth credentials are provided via env vars, obtain a token
+	// using the client_credentials grant (no browser required).
+	oauthKey := os.Getenv("BB_OAUTH_KEY")
+	oauthSecret := os.Getenv("BB_OAUTH_SECRET")
+	if oauthKey != "" && oauthSecret != "" {
+		token, err := auth.ClientCredentialsLogin(oauthKey, oauthSecret)
+		if err != nil {
+			return nil, fmt.Errorf("failed to authenticate with BB_OAUTH_KEY/BB_OAUTH_SECRET: %w", err)
+		}
+		return &Client{
+			httpClient: &http.Client{Timeout: timeout},
+			token:      token,
+			cfg:        &config.Config{OAuthKey: oauthKey, OAuthSecret: oauthSecret},
+		}, nil
+	}
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
@@ -50,18 +78,29 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("not authenticated. Run 'bb auth login' first")
 	}
 
+	return &Client{
+		httpClient: &http.Client{Timeout: timeout},
+		token:      token,
+		cfg:        cfg,
+	}, nil
+}
+
+// NewClientFromToken creates a Client from a raw access token string.
+// No disk I/O or env vars are read. Token refresh is not supported — if the
+// token expires, Bitbucket returns 401 and the caller must re-authenticate.
+// Intended for MCP OAuth mode where each request carries its own token.
+func NewClientFromToken(accessToken string) *Client {
 	timeout := defaultTimeout
 	if envTimeout := os.Getenv("BB_HTTP_TIMEOUT"); envTimeout != "" {
 		if secs, err := strconv.Atoi(envTimeout); err == nil && secs > 0 {
 			timeout = time.Duration(secs) * time.Second
 		}
 	}
-
 	return &Client{
 		httpClient: &http.Client{Timeout: timeout},
-		token:      token,
-		cfg:        cfg,
-	}, nil
+		token:      &config.TokenData{AccessToken: accessToken},
+		cfg:        &config.Config{},
+	}
 }
 
 // NewClientWith creates a Client from externally provided config, token, and HTTP client.

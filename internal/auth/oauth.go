@@ -2,6 +2,9 @@ package auth
 
 import (
 	"context"
+	cryptoRand "crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -192,6 +195,52 @@ func exchangeCode(clientID, clientSecret, code, redirectURI string) (*config.Tok
 	return &token, nil
 }
 
+// ClientCredentialsLogin obtains an access token using the OAuth 2.0
+// client_credentials grant. This does not require a browser or user
+// interaction — it authenticates as the OAuth consumer owner's account.
+// Ideal for Docker containers, CI, and headless environments.
+func ClientCredentialsLogin(clientID, clientSecret string) (*config.TokenData, error) {
+	data := url.Values{
+		"grant_type": {"client_credentials"},
+	}
+
+	req, err := http.NewRequest("POST", config.TokenURL, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(clientID, clientSecret)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.NetworkError(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.NetworkError(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, &errors.BBError{
+			Message:    fmt.Sprintf("Client credentials auth failed (HTTP %d): %s", resp.StatusCode, string(body)),
+			Suggestion: "Verify that your OAuth consumer key and secret are correct and that the consumer is configured as a private consumer in Bitbucket workspace settings.",
+			StatusCode: resp.StatusCode,
+		}
+	}
+
+	var token config.TokenData
+	if err := json.Unmarshal(body, &token); err != nil {
+		return nil, &errors.BBError{
+			Message:    "Failed to parse token response from Bitbucket",
+			Suggestion: "This may be a temporary issue with Bitbucket's API. Try again in a few moments.",
+			Err:        err,
+		}
+	}
+	return &token, nil
+}
+
 // RefreshAccessToken uses the refresh token to obtain a new access token.
 func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*config.TokenData, error) {
 	data := url.Values{
@@ -241,6 +290,41 @@ func RefreshAccessToken(clientID, clientSecret, refreshToken string) (*config.To
 		}
 	}
 	return &token, nil
+}
+
+// GenerateCodeVerifier creates a PKCE code verifier (43-128 character base64url string).
+func GenerateCodeVerifier() (string, error) {
+	b := make([]byte, 32)
+	if _, err := io.ReadFull(cryptoRand.Reader, b); err != nil {
+		return "", fmt.Errorf("generating code verifier: %w", err)
+	}
+	return base64URLEncode(b), nil
+}
+
+// GenerateCodeChallenge creates a PKCE S256 code challenge from a verifier.
+func GenerateCodeChallenge(verifier string) string {
+	h := sha256.Sum256([]byte(verifier))
+	return base64URLEncode(h[:])
+}
+
+// GenerateState creates a random state parameter for CSRF protection.
+func GenerateState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := io.ReadFull(cryptoRand.Reader, b); err != nil {
+		return "", fmt.Errorf("generating state: %w", err)
+	}
+	return base64URLEncode(b), nil
+}
+
+// base64URLEncode encodes bytes to base64url without padding.
+func base64URLEncode(b []byte) string {
+	return strings.TrimRight(base64.URLEncoding.EncodeToString(b), "=")
+}
+
+// ExchangeCodeServerSide exchanges an authorization code for tokens on the server side.
+// Unlike exchangeCode, this is exported and supports an optional PKCE code_verifier.
+func ExchangeCodeServerSide(clientID, clientSecret, code, redirectURI string) (*config.TokenData, error) {
+	return exchangeCode(clientID, clientSecret, code, redirectURI)
 }
 
 // openBrowser attempts to open the given URL in the user's default browser.

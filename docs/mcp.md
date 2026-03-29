@@ -91,41 +91,47 @@ A Dockerfile is included for running the MCP server in a container.
 docker build -t bb-mcp .
 ```
 
-### Run with stdio
+### Run with volume-mounted config (recommended)
+
+Mount your existing `bb` config directory into the container. This gives the server access to your stored OAuth token and credentials for automatic token refresh.
 
 ```sh
-docker run -i --rm bb-mcp mcp serve
+# macOS
+docker run -d --rm -p 8080:8080 \
+  -v "$HOME/Library/Application Support/bitbucket-cli:/home/bb/.config/bitbucket-cli" \
+  bb-mcp mcp serve --transport http --host 0.0.0.0 --no-auth
+
+# Linux
+docker run -d --rm -p 8080:8080 \
+  -v "$HOME/.config/bitbucket-cli:/home/bb/.config/bitbucket-cli" \
+  bb-mcp mcp serve --transport http --host 0.0.0.0 --no-auth
 ```
 
-### Run with HTTP and OAuth
+The volume must be writable so the server can refresh expired tokens.
+
+### Run with OAuth env vars (private consumers only)
+
+If your OAuth consumer is configured as **private** in Bitbucket workspace settings, you can use the `client_credentials` grant via environment variables:
 
 ```sh
-docker run -it --rm \
-  -p 8817:8817 -p 8080:8080 \
-  bb-mcp mcp serve \
-    --transport http --host 0.0.0.0 --no-auth \
-    --client-id YOUR_OAUTH_KEY --client-secret YOUR_OAUTH_SECRET
+docker run -d --rm -p 8080:8080 \
+  -e BB_OAUTH_KEY=your-key -e BB_OAUTH_SECRET=your-secret \
+  bb-mcp mcp serve --transport http --host 0.0.0.0 --no-auth
 ```
 
-The `--client-id` and `--client-secret` flags trigger the OAuth browser flow at startup. Port 8817 is the OAuth callback port and must be exposed to the host for the browser flow to work.
+This obtains tokens automatically — no browser interaction required.
 
 ## Client Configuration
 
 ### Claude Code
 
-Use the installer:
+Register the running HTTP server by URL:
 
 ```sh
-bb mcp install
+claude mcp add-json bb '{"url":"http://localhost:8080/mcp"}'
 ```
 
-Or install manually:
-
-```sh
-claude mcp add-json bb '{"command":"docker","args":["run","-i","--rm","bb-mcp","mcp","serve"]}'
-```
-
-For a remote HTTP server:
+With bearer token authentication:
 
 ```sh
 claude mcp add-json bb '{"url":"http://localhost:8080/mcp","headers":{"Authorization":"Bearer YOUR_TOKEN"}}'
@@ -133,37 +139,13 @@ claude mcp add-json bb '{"url":"http://localhost:8080/mcp","headers":{"Authoriza
 
 ### Claude Desktop
 
-Use the installer:
-
-```sh
-bb mcp install --client claude-desktop
-```
-
-Or add manually to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-**Docker (stdio):**
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
   "mcpServers": {
     "bb": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "bb-mcp", "mcp", "serve"]
-    }
-  }
-}
-```
-
-**Remote HTTP:**
-
-```json
-{
-  "mcpServers": {
-    "bb": {
-      "url": "http://localhost:8080/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_TOKEN"
-      }
+      "url": "http://localhost:8080/mcp"
     }
   }
 }
@@ -209,18 +191,26 @@ bb mcp uninstall --client claude-desktop
 
 ## Authentication
 
-The MCP server uses `bb`'s existing OAuth authentication. Before using MCP tools, ensure you're logged in:
+Authentication is resolved in this order:
+
+1. **Volume-mounted config** — mount the host's `bb` config directory into the container. The server uses the stored OAuth token and refreshes it automatically. This is the recommended approach for Docker.
+2. **`BB_OAUTH_KEY` + `BB_OAUTH_SECRET` env vars** — uses the OAuth 2.0 client_credentials grant. Requires a **private** OAuth consumer.
+3. **`--client-id` + `--client-secret` flags** — runs the OAuth browser flow at startup.
+4. **Stored token** — from a previous `bb auth login`.
+
+For Docker deployments, mount the config directory:
+
+```sh
+# macOS
+docker run -d --rm -p 8080:8080 \
+  -v "$HOME/Library/Application Support/bitbucket-cli:/home/bb/.config/bitbucket-cli" \
+  bb-mcp mcp serve --transport http --host 0.0.0.0 --no-auth
+```
+
+For local use, log in once:
 
 ```sh
 bb auth login
-```
-
-The MCP server will use your stored OAuth credentials automatically. No additional authentication setup is required.
-
-For Docker deployments, pass OAuth credentials at startup:
-
-```sh
-bb mcp serve --client-id YOUR_KEY --client-secret YOUR_SECRET
 ```
 
 ## Available Tools
@@ -402,6 +392,7 @@ If using HTTP transport, verify:
 - All API operations are subject to the same permissions as your Bitbucket OAuth consumer
 - The MCP server only exposes read and create operations - no delete operations are exposed
 - **Stdio transport**: All communication is local (stdin/stdout) - no network services are exposed
+- **Docker transport**: OAuth credentials are stored in `~/.config/bitbucket-cli/mcp.env` with `0600` permissions and passed to Docker via `--env-file` — they never appear in MCP client configuration files
 - **HTTP transport**: Bearer token authentication is enabled by default. The token is persisted locally and uses constant-time comparison to prevent timing attacks
 - Avoid using `--no-auth` in production or on shared networks
 

@@ -12,7 +12,7 @@ import (
 )
 
 // ResourceHandler is a function that handles reading a resource by URI.
-type ResourceHandler func(uri string) (*ResourceReadResult, error)
+type ResourceHandler func(ctx context.Context, uri string) (*ResourceReadResult, error)
 
 // RegisteredResource combines a resource template with its handler function.
 type RegisteredResource struct {
@@ -126,6 +126,17 @@ func (s *Server) registerBuiltinHandlers() {
 	s.RegisterHandler("resources/read", s.handleResourcesRead)
 	s.RegisterHandler("prompts/list", s.handlePromptsList)
 	s.RegisterHandler("prompts/get", s.handlePromptsGet)
+}
+
+// Context returns the server's context.
+func (s *Server) Context() context.Context {
+	return s.ctx
+}
+
+// SetContext replaces the server's context. Use this to inject per-request
+// values (e.g. OAuth tokens) before processing requests.
+func (s *Server) SetContext(ctx context.Context) {
+	s.ctx = ctx
 }
 
 // Start begins listening for JSON-RPC requests on stdin and processing them.
@@ -375,7 +386,7 @@ func (s *Server) handleResourcesRead(req *Request) (map[string]interface{}, erro
 	// Try each registered resource handler
 	for _, r := range s.resources {
 		if matchesTemplate(r.Template.URITemplate, uri) {
-			result, err := r.Handler(uri)
+			result, err := r.Handler(s.ctx, uri)
 			if err != nil {
 				return nil, err
 			}

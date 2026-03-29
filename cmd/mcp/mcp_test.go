@@ -120,7 +120,7 @@ func TestIntegration_MCP_StatusFlags(t *testing.T) {
 
 // TestMCPDockerConfigJSON tests the mcpDockerConfigJSON helper function.
 func TestMCPDockerConfigJSON(t *testing.T) {
-	configJSON, err := mcpDockerConfigJSON("bb-mcp:latest")
+	configJSON, err := mcpDockerConfigJSON("bb-mcp:latest", "")
 	if err != nil {
 		t.Fatalf("mcpDockerConfigJSON failed: %v", err)
 	}
@@ -143,9 +143,31 @@ func TestMCPDockerConfigJSON(t *testing.T) {
 	}
 }
 
+// TestMCPDockerConfigJSON_WithEnvFile tests Docker config with an env file path.
+func TestMCPDockerConfigJSON_WithEnvFile(t *testing.T) {
+	configJSON, err := mcpDockerConfigJSON("bb-mcp:latest", "/home/user/.config/bitbucket-cli/mcp.env")
+	if err != nil {
+		t.Fatalf("mcpDockerConfigJSON failed: %v", err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
+		t.Fatalf("Failed to parse config JSON: %v", err)
+	}
+
+	args := config["args"].([]interface{})
+	// Should be: run -i --rm --env-file /path/to/mcp.env bb-mcp:latest mcp serve
+	if len(args) != 8 {
+		t.Fatalf("Expected 8 args, got %d: %v", len(args), args)
+	}
+	if args[3] != "--env-file" || args[4] != "/home/user/.config/bitbucket-cli/mcp.env" {
+		t.Errorf("Expected --env-file flag, got %v %v", args[3], args[4])
+	}
+}
+
 // TestMCPDockerConfigJSON_DefaultImage tests with the default image name.
 func TestMCPDockerConfigJSON_DefaultImage(t *testing.T) {
-	configJSON, err := mcpDockerConfigJSON(DefaultDockerImage)
+	configJSON, err := mcpDockerConfigJSON(DefaultDockerImage, "")
 	if err != nil {
 		t.Fatalf("mcpDockerConfigJSON failed: %v", err)
 	}
