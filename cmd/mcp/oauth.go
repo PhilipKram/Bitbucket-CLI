@@ -72,9 +72,10 @@ type mcpSessionStore struct {
 	codes        map[string]*oauthAuthCode
 	clientID     string // Bitbucket OAuth consumer key
 	clientSecret string // Bitbucket OAuth consumer secret
+	callbackURL  string // OAuth callback URL (Bitbucket redirects here after user authorizes)
 }
 
-func newSessionStore(bbClientID, bbClientSecret, persistPath string) *mcpSessionStore {
+func newSessionStore(bbClientID, bbClientSecret, persistPath, callbackURL string) *mcpSessionStore {
 	s := &mcpSessionStore{
 		sessions:     make(map[string]*mcpSession),
 		clients:      make(map[string]*oauthRegisteredClient),
@@ -83,6 +84,7 @@ func newSessionStore(bbClientID, bbClientSecret, persistPath string) *mcpSession
 		clientID:     bbClientID,
 		clientSecret: bbClientSecret,
 		path:         persistPath,
+		callbackURL:  callbackURL,
 	}
 	s.loadFromDisk()
 	return s
@@ -192,6 +194,9 @@ func (s *mcpSessionStore) loadFromDisk() {
 
 // --- Auth middleware ---
 
+// tokenRefreshBuffer is how many seconds before expiry we proactively refresh.
+const tokenRefreshBuffer = 300 // 5 minutes
+
 func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hdr := r.Header.Get("Authorization")
@@ -208,11 +213,23 @@ func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		// Auto-refresh expired Bitbucket token
-		if sess.TokenExpiresAt > 0 && time.Now().Unix() >= sess.TokenExpiresAt && sess.RefreshToken != "" {
+		// Auto-refresh Bitbucket token if expired or expiring soon.
+		// Also refresh if TokenExpiresAt is 0 (unknown expiry) and we have a refresh token,
+		// since the token was likely obtained hours ago.
+		needsRefresh := sess.RefreshToken != "" && (sess.TokenExpiresAt == 0 || time.Now().Unix() >= sess.TokenExpiresAt-tokenRefreshBuffer)
+		if needsRefresh {
+			fmt.Fprintf(os.Stderr, "Refreshing Bitbucket token for session...\n")
 			newToken, err := authPkg.RefreshAccessToken(s.clientID, s.clientSecret, sess.RefreshToken)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: token refresh failed for session: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Token refresh failed: %v\n", err)
+				// If we know the token is expired (not just unknown), reject the request
+				// so Claude Code triggers re-authorization
+				if sess.TokenExpiresAt > 0 && time.Now().Unix() >= sess.TokenExpiresAt {
+					w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="token expired and refresh failed"`)
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+				// TokenExpiresAt is 0 (unknown) — let the request through, Bitbucket will tell us
 			} else {
 				sess.AccessToken = newToken.AccessToken
 				if newToken.RefreshToken != "" {
@@ -222,6 +239,7 @@ func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
 					sess.TokenExpiresAt = time.Now().Unix() + int64(newToken.ExpiresIn)
 				}
 				s.putSession(sess)
+				fmt.Fprintf(os.Stderr, "Token refreshed successfully (expires in %ds)\n", newToken.ExpiresIn)
 			}
 		}
 
@@ -378,12 +396,11 @@ func oauthAuthorizeHandler(store *mcpSessionStore) http.HandlerFunc {
 			CodeChallengeMethod: codeChallengeMethod,
 		})
 
-		// Redirect to Bitbucket's authorization page using the standard callback URL
-		callbackURI := fmt.Sprintf("http://localhost:%d/callback", authPkg.OAuthCallbackPort)
+		// Redirect to Bitbucket's authorization page
 		bbAuthURL := fmt.Sprintf("%s?client_id=%s&response_type=code&redirect_uri=%s&state=%s",
 			config.AuthURL,
 			url.QueryEscape(store.clientID),
-			url.QueryEscape(callbackURI),
+			url.QueryEscape(store.callbackURL),
 			url.QueryEscape(bbState),
 		)
 
@@ -422,8 +439,7 @@ func oauthBitbucketCallbackHandler(store *mcpSessionStore) http.HandlerFunc {
 		}
 
 		// Exchange code with Bitbucket using the same callback URI
-		callbackURI := fmt.Sprintf("http://localhost:%d/callback", authPkg.OAuthCallbackPort)
-		bbToken, err := authPkg.ExchangeCodeServerSide(store.clientID, store.clientSecret, code, callbackURI)
+		bbToken, err := authPkg.ExchangeCodeServerSide(store.clientID, store.clientSecret, code, store.callbackURL)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Token exchange failed: %v", err), http.StatusBadGateway)
 			return
@@ -554,7 +570,7 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 		sessionsPath = filepath.Join(dir, "sessions.json")
 	}
 
-	store := newSessionStore(bbClientID, bbClientSecret, sessionsPath)
+	store := newSessionStore(bbClientID, bbClientSecret, sessionsPath, "")
 
 	// Per-user server factory: each request gets a server with the user's Bitbucket token
 	handler := mcpPkg.NewHTTPHandler(func(r *http.Request) *mcpPkg.Server {
@@ -576,6 +592,17 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 		baseURL = fmt.Sprintf("http://%s", addr)
 	}
 
+	// Determine callback URL:
+	// - If external-url is set → use {external-url}/callback (works for remote servers)
+	// - Otherwise → use localhost:8817/callback (matches bb auth login consumer config)
+	callbackURL := fmt.Sprintf("http://localhost:%d/callback", authPkg.OAuthCallbackPort)
+	isRemote := externalURL != "" && !strings.Contains(externalURL, "localhost") && !strings.Contains(externalURL, "127.0.0.1")
+	if isRemote {
+		callbackURL = baseURL + "/callback"
+	}
+
+	store.callbackURL = callbackURL
+
 	mux := http.NewServeMux()
 
 	// OAuth discovery endpoints
@@ -587,6 +614,9 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 	mux.HandleFunc("GET /oauth/authorize", oauthAuthorizeHandler(store))
 	mux.HandleFunc("POST /oauth/token", oauthTokenHandler(store))
 
+	// Callback handler on main server (for remote deployments)
+	mux.HandleFunc("GET /callback", oauthBitbucketCallbackHandler(store))
+
 	// MCP endpoint with session auth
 	mux.Handle(basePath, store.sessionBearerAuth(handler))
 
@@ -596,22 +626,28 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	// Start a separate callback server on the standard OAuth callback port (8817)
-	// so we match the redirect_uri registered in the Bitbucket OAuth consumer.
-	callbackMux := http.NewServeMux()
-	callbackMux.HandleFunc("GET /callback", oauthBitbucketCallbackHandler(store))
-	callbackAddr := fmt.Sprintf("0.0.0.0:%d", authPkg.OAuthCallbackPort)
-	callbackServer := &http.Server{
-		Addr:              callbackAddr,
-		Handler:           callbackMux,
-		ReadHeaderTimeout: 10 * time.Second,
+	// Also start callback on port 8817 for localhost compatibility with existing
+	// Bitbucket consumer configs (matches bb auth login).
+	var callbackServer *http.Server
+	if !isRemote {
+		callbackMux := http.NewServeMux()
+		callbackMux.HandleFunc("GET /callback", oauthBitbucketCallbackHandler(store))
+		callbackAddr := fmt.Sprintf("0.0.0.0:%d", authPkg.OAuthCallbackPort)
+		callbackServer = &http.Server{
+			Addr:              callbackAddr,
+			Handler:           callbackMux,
+			ReadHeaderTimeout: 10 * time.Second,
+		}
 	}
 
 	fmt.Fprintf(os.Stderr, "bb MCP server (OAuth mode) running on %s%s\n", baseURL, basePath)
 	fmt.Fprintf(os.Stderr, "OAuth metadata: %s/.well-known/oauth-authorization-server\n", baseURL)
-	fmt.Fprintf(os.Stderr, "OAuth callback: http://localhost:%d/callback\n", authPkg.OAuthCallbackPort)
+	fmt.Fprintf(os.Stderr, "OAuth callback: %s\n", callbackURL)
 	fmt.Fprintf(os.Stderr, "Bitbucket consumer: %s\n", bbClientID)
 	fmt.Fprintf(os.Stderr, "bb-mcp version: %s\n", buildinfo.Version)
+	if isRemote {
+		fmt.Fprintf(os.Stderr, "NOTE: Update your Bitbucket OAuth consumer callback URL to: %s\n", callbackURL)
+	}
 
 	// Graceful shutdown
 	ctx, stop := signalContext()
@@ -621,11 +657,13 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 	go func() {
 		errCh <- httpServer.ListenAndServe()
 	}()
-	go func() {
-		if err := callbackServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "OAuth callback server error: %v\n", err)
-		}
-	}()
+	if callbackServer != nil {
+		go func() {
+			if err := callbackServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fmt.Fprintf(os.Stderr, "OAuth callback server error: %v\n", err)
+			}
+		}()
+	}
 
 	select {
 	case err := <-errCh:
@@ -636,7 +674,9 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 		fmt.Fprintln(os.Stderr, "\nShutting down...")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		callbackServer.Shutdown(shutdownCtx)
+		if callbackServer != nil {
+			callbackServer.Shutdown(shutdownCtx)
+		}
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown error: %w", err)
 		}

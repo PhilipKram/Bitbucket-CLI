@@ -16,7 +16,7 @@ import (
 // --- Session store tests ---
 
 func TestNewSessionStore(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	if store.clientID != "key" {
 		t.Errorf("Expected clientID 'key', got %s", store.clientID)
 	}
@@ -29,7 +29,7 @@ func TestNewSessionStore(t *testing.T) {
 }
 
 func TestSessionStore_PutGetSession(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	sess := &mcpSession{
 		BearerToken: "bearer-123",
@@ -51,7 +51,7 @@ func TestSessionStore_PutGetSession(t *testing.T) {
 }
 
 func TestSessionStore_GetSession_NotFound(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	got := store.getSession("nonexistent")
 	if got != nil {
 		t.Errorf("Expected nil, got %v", got)
@@ -59,7 +59,7 @@ func TestSessionStore_GetSession_NotFound(t *testing.T) {
 }
 
 func TestSessionStore_PutGetClient(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	client := &oauthRegisteredClient{
 		ClientID:     "client-abc",
@@ -78,7 +78,7 @@ func TestSessionStore_PutGetClient(t *testing.T) {
 }
 
 func TestSessionStore_PutPopPending(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	req := &oauthAuthRequest{
 		ClientID:    "client-1",
@@ -104,7 +104,7 @@ func TestSessionStore_PutPopPending(t *testing.T) {
 }
 
 func TestSessionStore_PutPopCode(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	ac := &oauthAuthCode{
 		Code:        "code-1",
@@ -136,7 +136,7 @@ func TestSessionStore_Persistence(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 
 	// Create store and save a session
-	store1 := newSessionStore("key", "secret", path)
+	store1 := newSessionStore("key", "secret", path, "")
 	store1.putSession(&mcpSession{
 		BearerToken: "bearer-persist",
 		AccessToken: "access-persist",
@@ -153,7 +153,7 @@ func TestSessionStore_Persistence(t *testing.T) {
 	}
 
 	// Create new store from same file — should load the session
-	store2 := newSessionStore("key", "secret", path)
+	store2 := newSessionStore("key", "secret", path, "")
 	got := store2.getSession("bearer-persist")
 	if got == nil {
 		t.Fatal("Expected session loaded from disk, got nil")
@@ -165,7 +165,7 @@ func TestSessionStore_Persistence(t *testing.T) {
 
 func TestSessionStore_PersistenceNoPath(t *testing.T) {
 	// With empty path, persistence should be a no-op (no panic)
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	store.putSession(&mcpSession{BearerToken: "test", AccessToken: "test"})
 }
 
@@ -237,7 +237,7 @@ func TestOAuthProtectedResourceHandler(t *testing.T) {
 // --- OAuth register handler tests ---
 
 func TestOAuthRegisterHandler(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthRegisterHandler(store)
 
 	body := `{"client_name":"test-client","redirect_uris":["http://localhost:9999/callback"]}`
@@ -275,7 +275,7 @@ func TestOAuthRegisterHandler(t *testing.T) {
 }
 
 func TestOAuthRegisterHandler_MissingRedirectURIs(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthRegisterHandler(store)
 
 	body := `{"client_name":"test-client","redirect_uris":[]}`
@@ -290,7 +290,7 @@ func TestOAuthRegisterHandler_MissingRedirectURIs(t *testing.T) {
 }
 
 func TestOAuthRegisterHandler_MethodNotAllowed(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthRegisterHandler(store)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/register", nil)
@@ -305,7 +305,7 @@ func TestOAuthRegisterHandler_MethodNotAllowed(t *testing.T) {
 // --- OAuth authorize handler tests ---
 
 func TestOAuthAuthorizeHandler_RedirectsToBitbucket(t *testing.T) {
-	store := newSessionStore("bb-consumer-key", "bb-secret", "")
+	store := newSessionStore("bb-consumer-key", "bb-secret", "", "http://localhost:8817/callback")
 
 	// Register a client first
 	store.putClient(&oauthRegisteredClient{
@@ -345,7 +345,7 @@ func TestOAuthAuthorizeHandler_RedirectsToBitbucket(t *testing.T) {
 }
 
 func TestOAuthAuthorizeHandler_MissingParams(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthAuthorizeHandler(store)
 
 	req := httptest.NewRequest(http.MethodGet, "/oauth/authorize", nil)
@@ -358,7 +358,7 @@ func TestOAuthAuthorizeHandler_MissingParams(t *testing.T) {
 }
 
 func TestOAuthAuthorizeHandler_UnknownClient(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthAuthorizeHandler(store)
 
 	req := httptest.NewRequest(http.MethodGet,
@@ -373,7 +373,7 @@ func TestOAuthAuthorizeHandler_UnknownClient(t *testing.T) {
 }
 
 func TestOAuthAuthorizeHandler_InvalidRedirectURI(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	store.putClient(&oauthRegisteredClient{
 		ClientID:     "client-1",
 		ClientName:   "test",
@@ -396,7 +396,7 @@ func TestOAuthAuthorizeHandler_InvalidRedirectURI(t *testing.T) {
 // --- OAuth token handler tests ---
 
 func TestOAuthTokenHandler_Success(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	sess := &mcpSession{
 		BearerToken: "session-bearer-token",
@@ -445,7 +445,7 @@ func TestOAuthTokenHandler_Success(t *testing.T) {
 }
 
 func TestOAuthTokenHandler_InvalidCode(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthTokenHandler(store)
 
 	body := "grant_type=authorization_code&code=invalid&client_id=x&redirect_uri=http://localhost/cb"
@@ -460,7 +460,7 @@ func TestOAuthTokenHandler_InvalidCode(t *testing.T) {
 }
 
 func TestOAuthTokenHandler_ClientIDMismatch(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	store.putCode("code-1", &oauthAuthCode{
 		Code:        "code-1",
 		ClientID:    "client-1",
@@ -482,7 +482,7 @@ func TestOAuthTokenHandler_ClientIDMismatch(t *testing.T) {
 }
 
 func TestOAuthTokenHandler_RedirectURIMismatch(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	store.putCode("code-1", &oauthAuthCode{
 		Code:        "code-1",
 		ClientID:    "client-1",
@@ -504,7 +504,7 @@ func TestOAuthTokenHandler_RedirectURIMismatch(t *testing.T) {
 }
 
 func TestOAuthTokenHandler_UnsupportedGrantType(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	handler := oauthTokenHandler(store)
 
 	body := "grant_type=client_credentials"
@@ -519,7 +519,7 @@ func TestOAuthTokenHandler_UnsupportedGrantType(t *testing.T) {
 }
 
 func TestOAuthTokenHandler_PKCEValidation(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 
 	// Store code with PKCE challenge
 	store.putCode("code-pkce", &oauthAuthCode{
@@ -548,7 +548,7 @@ func TestOAuthTokenHandler_PKCEValidation(t *testing.T) {
 // --- Session bearer auth middleware tests ---
 
 func TestSessionBearerAuth_NoToken(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -567,7 +567,7 @@ func TestSessionBearerAuth_NoToken(t *testing.T) {
 }
 
 func TestSessionBearerAuth_InvalidToken(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -587,7 +587,7 @@ func TestSessionBearerAuth_InvalidToken(t *testing.T) {
 }
 
 func TestSessionBearerAuth_ValidToken(t *testing.T) {
-	store := newSessionStore("key", "secret", "")
+	store := newSessionStore("key", "secret", "", "")
 	store.putSession(&mcpSession{
 		BearerToken: "valid-token",
 		AccessToken: "bb-token",

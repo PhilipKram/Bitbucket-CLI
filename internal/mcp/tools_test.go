@@ -1213,7 +1213,7 @@ func TestRegisterDefaultTools(t *testing.T) {
 	// Verify all expected tools are registered
 	expectedTools := []string{
 		"pr_list", "pr_view", "pr_create",
-		"pr_approve", "pr_merge", "pr_decline", "pr_diff", "pr_comment",
+		"pr_approve", "pr_merge", "pr_decline", "pr_diff", "pr_comment", "pr_comments",
 		"issue_list", "issue_create", "issue_view", "issue_edit", "issue_delete", "issue_comment",
 		"pipeline_list", "pipeline_trigger", "pipeline_view", "pipeline_stop",
 		"repo_list", "repo_view",

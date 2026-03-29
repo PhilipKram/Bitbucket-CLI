@@ -364,6 +364,19 @@ func NewPRCommentTool() Tool {
 	}
 }
 
+// NewPRCommentsListTool creates a tool definition for listing PR comments.
+func NewPRCommentsListTool() Tool {
+	return Tool{
+		Name:        "pr_comments",
+		Title:       "List Pull Request Comments",
+		Description: "List all comments on a pull request, including inline code review comments and general comments",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"pr_id":      NewStringProperty("Pull request ID"),
+		}, []string{"repository", "pr_id"}),
+	}
+}
+
 // Issue Tool Definitions
 
 // NewIssueListTool creates a tool definition for listing issues.
@@ -606,6 +619,9 @@ func RegisterDefaultTools(registry *ToolRegistry) error {
 	}
 	if err := registry.Register(NewPRCommentTool(), PRCommentHandler); err != nil {
 		return fmt.Errorf("failed to register pr_comment: %w", err)
+	}
+	if err := registry.Register(NewPRCommentsListTool(), PRCommentsListHandler); err != nil {
+		return fmt.Errorf("failed to register pr_comments: %w", err)
 	}
 
 	// Issue Tools

@@ -396,6 +396,96 @@ func PRCommentHandler(ctx context.Context, args map[string]interface{}) ([]Conte
 	return []Content{NewTextContent(string(data))}, nil
 }
 
+// PRCommentsListHandler handles the pr_comments tool invocation.
+func PRCommentsListHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	client, err := GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/comments?pagelen=100", repository, prID)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pull request comments: %w", err)
+	}
+
+	// Parse the paginated response to extract comments
+	var response struct {
+		Values []struct {
+			ID      int `json:"id"`
+			Content struct {
+				Raw string `json:"raw"`
+			} `json:"content"`
+			User struct {
+				DisplayName string `json:"display_name"`
+				Nickname    string `json:"nickname"`
+			} `json:"user"`
+			CreatedOn string `json:"created_on"`
+			UpdatedOn string `json:"updated_on"`
+			Inline    *struct {
+				Path string `json:"path"`
+				From *int   `json:"from"`
+				To   *int   `json:"to"`
+			} `json:"inline"`
+			Parent *struct {
+				ID int `json:"id"`
+			} `json:"parent"`
+			Deleted bool `json:"deleted"`
+		} `json:"values"`
+	}
+	if err := json.Unmarshal(data, &response); err != nil {
+		return nil, fmt.Errorf("failed to parse comments: %w", err)
+	}
+
+	// Format comments for readability
+	var sb strings.Builder
+	for _, c := range response.Values {
+		if c.Deleted {
+			continue
+		}
+		author := c.User.DisplayName
+		if author == "" {
+			author = c.User.Nickname
+		}
+
+		if c.Inline != nil {
+			sb.WriteString(fmt.Sprintf("### Inline comment by %s on `%s`", author, c.Inline.Path))
+			if c.Inline.To != nil {
+				sb.WriteString(fmt.Sprintf(" (line %d)", *c.Inline.To))
+			}
+			sb.WriteString("\n")
+		} else {
+			sb.WriteString(fmt.Sprintf("### Comment by %s", author))
+			if c.Parent != nil {
+				sb.WriteString(fmt.Sprintf(" (reply to #%d)", c.Parent.ID))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString(fmt.Sprintf("*%s*\n\n", c.CreatedOn))
+		sb.WriteString(c.Content.Raw)
+		sb.WriteString("\n\n---\n\n")
+	}
+
+	if sb.Len() == 0 {
+		return []Content{NewTextContent("No comments on this pull request.")}, nil
+	}
+
+	return []Content{NewTextContent(sb.String())}, nil
+}
+
 // PullRequest represents a Bitbucket pull request.
 // This is copied from cmd/pr/pr.go to avoid circular dependencies.
 type PullRequest struct {
