@@ -803,7 +803,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     </div>
                     <h3 class="feature-title">MCP Server</h3>
-                    <p class="feature-desc">Built-in Model Context Protocol server with stdio and HTTP transports. Docker-ready with OAuth support. Works with Claude Code, Claude Desktop, and Cursor.</p>
+                    <p class="feature-desc">Built-in Model Context Protocol server with per-user OAuth, stdio and HTTP transports. Deploy as a shared Docker service — each user authenticates with their own Bitbucket account.</p>
                     <span class="feature-code">bb mcp serve --transport http</span>
                 </div>
                 <div class="glass-card gradient-border feature-card reveal" style="--reveal-delay: 8">
@@ -1264,7 +1264,7 @@
                             <li class="code-info-item"><span class="code-info-dot"></span> Target any workspace/repo</li>
                             <li class="code-info-item"><span class="code-info-dot"></span> JSON output for scripting</li>
                             <li class="code-info-item"><span class="code-info-dot"></span> Branch and tag management</li>
-                            <li class="code-info-item"><span class="code-info-dot"></span> MCP server with HTTP &amp; Docker</li>
+                            <li class="code-info-item"><span class="code-info-dot"></span> MCP server with per-user OAuth &amp; Docker</li>
                         </ul>
                     </div>
                     <div class="code-block">
@@ -1284,9 +1284,9 @@
 <span class="cmd">bb branch create feature/auth --target main</span>
 <span class="cmd">bb branch tags myteam/backend-api</span>
 
-<span class="cm"># Start MCP server (stdio or HTTP)</span>
-<span class="cmd">bb mcp serve --transport http</span>
-<span class="cmd">bb mcp install</span>
+<span class="cm"># MCP server with per-user OAuth (team deployment)</span>
+<span class="cmd">bb mcp serve --transport http --client-id KEY --client-secret SECRET</span>
+<span class="cmd">claude mcp add --transport http bitbucket http://localhost:8080/mcp</span>
 
 <span class="cm"># Self-update to latest version</span>
 <span class="cmd">bb upgrade</span></pre>

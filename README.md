@@ -163,25 +163,28 @@ bb auth logout       # Remove stored credentials
 
 `bb` supports the Model Context Protocol, allowing AI agents and LLM-powered development tools to interact with Bitbucket through `bb` as a tool provider.
 
-### Start the MCP server
+### Local usage (stdio)
 
 ```sh
 bb mcp serve
+bb mcp install   # auto-configure Claude Code
 ```
 
-### Configure your AI client
+### Shared server with per-user OAuth (Docker)
 
-**Claude Desktop** - Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Deploy as a company-wide service — each user authenticates with their own Bitbucket account:
 
-```json
-{
-  "mcpServers": {
-    "bitbucket": {
-      "command": "bb",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
+```sh
+docker build -t bb-mcp .
+docker run -d --name bb-mcp -p 8080:8080 -p 8817:8817 bb-mcp \
+  --client-id YOUR_KEY --client-secret YOUR_SECRET \
+  --external-url http://localhost:8080
+```
+
+Users connect without installing `bb`:
+
+```sh
+claude mcp add --transport http --scope user bitbucket http://localhost:8080/mcp
 ```
 
 ### What you can do
@@ -192,11 +195,6 @@ Once configured, AI agents can:
 - Trigger and monitor CI/CD pipelines
 - Create and list issues
 - All using natural language!
-
-**Example interactions:**
-- "Create a pull request in myworkspace/myrepo from feature-branch to main"
-- "Show me recent pipeline runs"
-- "List all open pull requests"
 
 For full documentation, configuration examples, and available tools, see [docs/mcp.md](docs/mcp.md).
 
