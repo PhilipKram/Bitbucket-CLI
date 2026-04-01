@@ -28,12 +28,13 @@ func signalContext() (context.Context, context.CancelFunc) {
 // --- Session types ---
 
 type mcpSession struct {
-	BearerToken    string `json:"bearer_token"`
-	AccessToken    string `json:"access_token"`
-	RefreshToken   string `json:"refresh_token,omitempty"`
-	TokenExpiresAt int64  `json:"token_expires_at,omitempty"`
-	ClientID       string `json:"client_id"`
-	Username       string `json:"username,omitempty"`
+	BearerToken     string `json:"bearer_token"`
+	AccessToken     string `json:"access_token"`
+	RefreshToken    string `json:"refresh_token,omitempty"`      // Bitbucket refresh token
+	MCPRefreshToken string `json:"mcp_refresh_token,omitempty"` // MCP session refresh token
+	TokenExpiresAt  int64  `json:"token_expires_at,omitempty"`
+	ClientID        string `json:"client_id"`
+	Username        string `json:"username,omitempty"`
 }
 
 type oauthRegisteredClient struct {
@@ -261,7 +262,7 @@ func oauthMetadataHandler(baseURL string) http.HandlerFunc {
 			"token_endpoint":                        baseURL + "/oauth/token",
 			"registration_endpoint":                 baseURL + "/oauth/register",
 			"response_types_supported":              []string{"code"},
-			"grant_types_supported":                 []string{"authorization_code"},
+			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 			"code_challenge_methods_supported":       []string{"S256"},
 			"token_endpoint_auth_methods_supported": []string{"none"},
 		}
@@ -501,55 +502,155 @@ func oauthTokenHandler(store *mcpSessionStore) http.HandlerFunc {
 		}
 
 		grantType := r.FormValue("grant_type")
-		if grantType != "authorization_code" {
-			jsonError(w, "unsupported_grant_type", "Only authorization_code is supported", http.StatusBadRequest)
-			return
+
+		switch grantType {
+		case "authorization_code":
+			handleAuthorizationCodeGrant(w, r, store)
+		case "refresh_token":
+			handleRefreshTokenGrant(w, r, store)
+		default:
+			jsonError(w, "unsupported_grant_type", "Supported: authorization_code, refresh_token", http.StatusBadRequest)
 		}
-
-		code := r.FormValue("code")
-		clientID := r.FormValue("client_id")
-		redirectURI := r.FormValue("redirect_uri")
-		codeVerifier := r.FormValue("code_verifier")
-
-		ac := store.popCode(code)
-		if ac == nil {
-			jsonError(w, "invalid_grant", "Invalid or expired authorization code", http.StatusBadRequest)
-			return
-		}
-
-		// Validate client_id
-		if ac.ClientID != clientID {
-			jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
-			return
-		}
-
-		// Validate redirect_uri
-		if ac.RedirectURI != redirectURI {
-			jsonError(w, "invalid_grant", "redirect_uri mismatch", http.StatusBadRequest)
-			return
-		}
-
-		// Validate PKCE if the client sent a code_challenge during authorize
-		if ac.CodeChallenge != "" && ac.CodeChallengeMethod == "S256" {
-			expected := authPkg.GenerateCodeChallenge(codeVerifier)
-			if subtle.ConstantTimeCompare([]byte(expected), []byte(ac.CodeChallenge)) != 1 {
-				jsonError(w, "invalid_grant", "PKCE verification failed", http.StatusBadRequest)
-				return
-			}
-		}
-
-		// Store and return the session
-		store.putSession(ac.Session)
-
-		fmt.Fprintf(os.Stderr, "New OAuth session created for client %s\n", clientID)
-
-		resp := map[string]interface{}{
-			"access_token": ac.Session.BearerToken,
-			"token_type":   "bearer",
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
 	}
+}
+
+// handleAuthorizationCodeGrant handles the authorization_code grant type.
+func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, store *mcpSessionStore) {
+	code := r.FormValue("code")
+	clientID := r.FormValue("client_id")
+	redirectURI := r.FormValue("redirect_uri")
+	codeVerifier := r.FormValue("code_verifier")
+
+	ac := store.popCode(code)
+	if ac == nil {
+		jsonError(w, "invalid_grant", "Invalid or expired authorization code", http.StatusBadRequest)
+		return
+	}
+
+	if ac.ClientID != clientID {
+		jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
+		return
+	}
+
+	if ac.RedirectURI != redirectURI {
+		jsonError(w, "invalid_grant", "redirect_uri mismatch", http.StatusBadRequest)
+		return
+	}
+
+	if ac.CodeChallenge != "" && ac.CodeChallengeMethod == "S256" {
+		expected := authPkg.GenerateCodeChallenge(codeVerifier)
+		if subtle.ConstantTimeCompare([]byte(expected), []byte(ac.CodeChallenge)) != 1 {
+			jsonError(w, "invalid_grant", "PKCE verification failed", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Generate a refresh token for the MCP session
+	mcpRefreshToken, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+	ac.Session.MCPRefreshToken = mcpRefreshToken
+
+	store.putSession(ac.Session)
+
+	fmt.Fprintf(os.Stderr, "New OAuth session created for client %s\n", clientID)
+
+	resp := map[string]interface{}{
+		"access_token":  ac.Session.BearerToken,
+		"token_type":    "bearer",
+		"expires_in":    7200,
+		"refresh_token": mcpRefreshToken,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleRefreshTokenGrant handles the refresh_token grant type.
+// This refreshes the MCP session by getting a new Bitbucket token.
+func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, store *mcpSessionStore) {
+	mcpRefreshToken := r.FormValue("refresh_token")
+	if mcpRefreshToken == "" {
+		jsonError(w, "invalid_request", "refresh_token is required", http.StatusBadRequest)
+		return
+	}
+
+	// Find session by MCP refresh token
+	var sess *mcpSession
+	store.mu.RLock()
+	for _, s := range store.sessions {
+		if s.MCPRefreshToken == mcpRefreshToken {
+			sess = s
+			break
+		}
+	}
+	store.mu.RUnlock()
+
+	if sess == nil {
+		jsonError(w, "invalid_grant", "Invalid refresh token", http.StatusBadRequest)
+		return
+	}
+
+	// Refresh the Bitbucket token
+	if sess.RefreshToken == "" {
+		jsonError(w, "invalid_grant", "No Bitbucket refresh token available", http.StatusBadRequest)
+		return
+	}
+
+	newBBToken, err := authPkg.RefreshAccessToken(store.clientID, store.clientSecret, sess.RefreshToken)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Bitbucket token refresh failed during MCP refresh: %v\n", err)
+		jsonError(w, "invalid_grant", "Bitbucket token refresh failed — re-authorization required", http.StatusBadRequest)
+		return
+	}
+
+	// Generate new session bearer token
+	newBearer, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	newMCPRefresh, err := generateToken()
+	if err != nil {
+		jsonError(w, "server_error", "Failed to generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove old session, create new one
+	store.mu.Lock()
+	delete(store.sessions, sess.BearerToken)
+	store.mu.Unlock()
+
+	newSess := &mcpSession{
+		BearerToken:     newBearer,
+		AccessToken:     newBBToken.AccessToken,
+		RefreshToken:    newBBToken.RefreshToken,
+		MCPRefreshToken: newMCPRefresh,
+		ClientID:        sess.ClientID,
+		Username:        sess.Username,
+	}
+	if newBBToken.ExpiresIn > 0 {
+		newSess.TokenExpiresAt = time.Now().Unix() + int64(newBBToken.ExpiresIn)
+	}
+	// Preserve refresh token if Bitbucket didn't return a new one
+	if newSess.RefreshToken == "" {
+		newSess.RefreshToken = sess.RefreshToken
+	}
+
+	store.putSession(newSess)
+
+	fmt.Fprintf(os.Stderr, "MCP session refreshed for client %s\n", sess.ClientID)
+
+	resp := map[string]interface{}{
+		"access_token":  newBearer,
+		"token_type":    "bearer",
+		"expires_in":    7200,
+		"refresh_token": newMCPRefresh,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func jsonError(w http.ResponseWriter, errorCode, description string, status int) {
