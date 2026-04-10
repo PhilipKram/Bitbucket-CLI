@@ -108,6 +108,7 @@ func (s *mcpSessionStore) putClient(c *oauthRegisteredClient) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients[c.ClientID] = c
+	s.saveToDisk()
 }
 
 func (s *mcpSessionStore) getClient(clientID string) *oauthRegisteredClient {
@@ -146,8 +147,15 @@ func (s *mcpSessionStore) popCode(code string) *oauthAuthCode {
 
 // --- Persistence ---
 
+// defaultTokenExpiry is the lifetime (in seconds) advertised to MCP clients
+// via the expires_in field. A long expiry minimises re-authentication prompts
+// across Claude Code sessions. The server still refreshes the underlying
+// Bitbucket token proactively.
+const defaultTokenExpiry = 30 * 24 * 3600 // 30 days
+
 type sessionPersistence struct {
-	Sessions []*mcpSession `json:"sessions"`
+	Sessions []*mcpSession            `json:"sessions"`
+	Clients  []*oauthRegisteredClient `json:"clients,omitempty"`
 }
 
 func (s *mcpSessionStore) saveToDisk() {
@@ -157,6 +165,9 @@ func (s *mcpSessionStore) saveToDisk() {
 	p := sessionPersistence{}
 	for _, sess := range s.sessions {
 		p.Sessions = append(p.Sessions, sess)
+	}
+	for _, c := range s.clients {
+		p.Clients = append(p.Clients, c)
 	}
 	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
@@ -188,8 +199,11 @@ func (s *mcpSessionStore) loadFromDisk() {
 	for _, sess := range p.Sessions {
 		s.sessions[sess.BearerToken] = sess
 	}
-	if len(s.sessions) > 0 {
-		fmt.Fprintf(os.Stderr, "Loaded %d persisted session(s)\n", len(s.sessions))
+	for _, c := range p.Clients {
+		s.clients[c.ClientID] = c
+	}
+	if len(s.sessions) > 0 || len(p.Clients) > 0 {
+		fmt.Fprintf(os.Stderr, "Loaded %d persisted session(s), %d registered client(s)\n", len(s.sessions), len(p.Clients))
 	}
 }
 
@@ -560,7 +574,7 @@ func handleAuthorizationCodeGrant(w http.ResponseWriter, r *http.Request, store 
 	resp := map[string]interface{}{
 		"access_token":  ac.Session.BearerToken,
 		"token_type":    "bearer",
-		"expires_in":    7200,
+		"expires_in":    defaultTokenExpiry,
 		"refresh_token": mcpRefreshToken,
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -646,7 +660,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, store *mcpS
 	resp := map[string]interface{}{
 		"access_token":  newBearer,
 		"token_type":    "bearer",
-		"expires_in":    7200,
+		"expires_in":    defaultTokenExpiry,
 		"refresh_token": newMCPRefresh,
 	}
 	w.Header().Set("Content-Type", "application/json")
