@@ -486,6 +486,195 @@ func PRCommentsListHandler(ctx context.Context, args map[string]interface{}) ([]
 	return []Content{NewTextContent(sb.String())}, nil
 }
 
+// PREditHandler handles the pr_edit tool invocation.
+func PREditHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	body := map[string]interface{}{}
+	if title, ok := args["title"].(string); ok && title != "" {
+		body["title"] = title
+	}
+	if description, ok := args["description"].(string); ok {
+		body["description"] = description
+	}
+	if destination, ok := args["destination"].(string); ok && destination != "" {
+		body["destination"] = map[string]interface{}{
+			"branch": map[string]string{"name": destination},
+		}
+	}
+	if closeBranch, ok := args["close_source_branch"].(bool); ok {
+		body["close_source_branch"] = closeBranch
+	}
+
+	if len(body) == 0 {
+		return nil, fmt.Errorf("no changes specified; use title, description, destination, or close_source_branch")
+	}
+
+	client, err := GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request body: %w", err)
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s", repository, prID)
+	data, err := client.Put(path, string(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to update pull request: %w", err)
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(data, &pr); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal pull request: %w", err)
+	}
+
+	result, err := json.Marshal(pr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal pull request: %w", err)
+	}
+
+	return []Content{NewTextContent(string(result))}, nil
+}
+
+// PRUnapproveHandler handles the pr_unapprove tool invocation.
+func PRUnapproveHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	client, err := GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/approve", repository, prID)
+	_, err = client.Delete(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unapprove pull request: %w", err)
+	}
+
+	return []Content{NewTextContent(fmt.Sprintf("Approval removed from PR #%s", prID))}, nil
+}
+
+// PRActivityHandler handles the pr_activity tool invocation.
+func PRActivityHandler(ctx context.Context, args map[string]interface{}) ([]Content, error) {
+	repository, ok := args["repository"].(string)
+	if !ok || repository == "" {
+		return nil, fmt.Errorf("repository parameter is required")
+	}
+	if err := validateRepoArg(repository); err != nil {
+		return nil, err
+	}
+
+	prID, ok := args["pr_id"].(string)
+	if !ok || prID == "" {
+		return nil, fmt.Errorf("pr_id parameter is required")
+	}
+
+	client, err := GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API client: %w", err)
+	}
+
+	path := fmt.Sprintf("/repositories/%s/pullrequests/%s/activity?pagelen=50", repository, prID)
+	data, err := client.Get(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch pull request activity: %w", err)
+	}
+
+	var paginated struct {
+		Values json.RawMessage `json:"values"`
+	}
+	if err := json.Unmarshal(data, &paginated); err != nil {
+		return nil, fmt.Errorf("failed to parse activity response: %w", err)
+	}
+
+	var activities []struct {
+		Update *struct {
+			State  string `json:"state"`
+			Author struct {
+				DisplayName string `json:"display_name"`
+			} `json:"author"`
+			Date string `json:"date"`
+		} `json:"update"`
+		Approval *struct {
+			User struct {
+				DisplayName string `json:"display_name"`
+			} `json:"user"`
+			Date string `json:"date"`
+		} `json:"approval"`
+		Comment *struct {
+			User struct {
+				DisplayName string `json:"display_name"`
+			} `json:"user"`
+			Content struct {
+				Raw string `json:"raw"`
+			} `json:"content"`
+			CreatedOn string `json:"created_on"`
+		} `json:"comment"`
+	}
+	if err := json.Unmarshal(paginated.Values, &activities); err != nil {
+		return nil, fmt.Errorf("failed to parse activities: %w", err)
+	}
+
+	var sb strings.Builder
+	for _, a := range activities {
+		switch {
+		case a.Update != nil:
+			date := a.Update.Date
+			if len(date) > 10 {
+				date = date[:10]
+			}
+			sb.WriteString(fmt.Sprintf("[%s] %s changed state to %s\n", date, a.Update.Author.DisplayName, a.Update.State))
+		case a.Approval != nil:
+			date := a.Approval.Date
+			if len(date) > 10 {
+				date = date[:10]
+			}
+			sb.WriteString(fmt.Sprintf("[%s] %s approved\n", date, a.Approval.User.DisplayName))
+		case a.Comment != nil:
+			date := a.Comment.CreatedOn
+			if len(date) > 10 {
+				date = date[:10]
+			}
+			raw := a.Comment.Content.Raw
+			if len(raw) > 80 {
+				raw = raw[:80] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("[%s] %s commented: %s\n", date, a.Comment.User.DisplayName, raw))
+		}
+	}
+
+	if sb.Len() == 0 {
+		return []Content{NewTextContent("No activity on this pull request.")}, nil
+	}
+
+	return []Content{NewTextContent(sb.String())}, nil
+}
+
 // PullRequest represents a Bitbucket pull request.
 // This is copied from cmd/pr/pr.go to avoid circular dependencies.
 type PullRequest struct {

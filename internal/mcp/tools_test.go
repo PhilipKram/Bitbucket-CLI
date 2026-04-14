@@ -1214,11 +1214,18 @@ func TestRegisterDefaultTools(t *testing.T) {
 	expectedTools := []string{
 		"pr_list", "pr_view", "pr_create",
 		"pr_approve", "pr_merge", "pr_decline", "pr_diff", "pr_comment", "pr_comments",
+		"pr_edit", "pr_unapprove", "pr_activity",
 		"issue_list", "issue_create", "issue_view", "issue_edit", "issue_delete", "issue_comment",
 		"pipeline_list", "pipeline_trigger", "pipeline_view", "pipeline_stop",
 		"repo_list", "repo_view",
 		"snippet_list", "snippet_view",
 		"branch_list",
+		"workspace_list", "workspace_view", "workspace_members", "workspace_projects",
+		"workspace_project_create", "workspace_permissions",
+		"user_me", "user_view", "user_emails", "user_ssh_keys", "user_ssh_key_add",
+		"environment_list", "environment_view", "environment_create", "environment_delete",
+		"variable_list", "variable_get", "variable_set", "variable_update", "variable_delete",
+		"download_list", "download_delete",
 	}
 
 	if registry.Count() != len(expectedTools) {

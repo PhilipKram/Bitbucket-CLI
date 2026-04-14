@@ -377,6 +377,49 @@ func NewPRCommentsListTool() Tool {
 	}
 }
 
+// NewPREditTool creates a tool definition for editing a pull request.
+func NewPREditTool() Tool {
+	return Tool{
+		Name:        "pr_edit",
+		Title:       "Edit Pull Request",
+		Description: "Edit a pull request in a Bitbucket repository (update title, description, destination branch, or close-branch setting)",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository":          NewStringProperty("Repository in format workspace/repo-slug"),
+			"pr_id":               NewStringProperty("Pull request ID"),
+			"title":               NewStringProperty("Optional: new PR title"),
+			"description":         NewStringProperty("Optional: new PR description"),
+			"destination":         NewStringProperty("Optional: new destination branch"),
+			"close_source_branch": NewBooleanProperty("Optional: close source branch after merge"),
+		}, []string{"repository", "pr_id"}),
+	}
+}
+
+// NewPRUnapproveTool creates a tool definition for removing approval from a pull request.
+func NewPRUnapproveTool() Tool {
+	return Tool{
+		Name:        "pr_unapprove",
+		Title:       "Unapprove Pull Request",
+		Description: "Remove approval from a pull request in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"pr_id":      NewStringProperty("Pull request ID"),
+		}, []string{"repository", "pr_id"}),
+	}
+}
+
+// NewPRActivityTool creates a tool definition for viewing pull request activity.
+func NewPRActivityTool() Tool {
+	return Tool{
+		Name:        "pr_activity",
+		Title:       "Pull Request Activity",
+		Description: "View the activity log of a pull request (updates, approvals, comments)",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"pr_id":      NewStringProperty("Pull request ID"),
+		}, []string{"repository", "pr_id"}),
+	}
+}
+
 // Issue Tool Definitions
 
 // NewIssueListTool creates a tool definition for listing issues.
@@ -592,8 +635,292 @@ func NewBranchListTool() Tool {
 	}
 }
 
+// Workspace Tool Definitions
+
+// NewWorkspaceListTool creates a tool definition for listing workspaces.
+func NewWorkspaceListTool() Tool {
+	return Tool{
+		Name:        "workspace_list",
+		Title:       "List Workspaces",
+		Description: "List Bitbucket workspaces you belong to",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{}, nil),
+	}
+}
+
+// NewWorkspaceViewTool creates a tool definition for viewing a workspace.
+func NewWorkspaceViewTool() Tool {
+	return Tool{
+		Name:        "workspace_view",
+		Title:       "View Workspace",
+		Description: "View details of a Bitbucket workspace",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"workspace": NewStringProperty("Workspace slug"),
+		}, []string{"workspace"}),
+	}
+}
+
+// NewWorkspaceMembersTool creates a tool definition for listing workspace members.
+func NewWorkspaceMembersTool() Tool {
+	return Tool{
+		Name:        "workspace_members",
+		Title:       "List Workspace Members",
+		Description: "List members of a Bitbucket workspace",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"workspace": NewStringProperty("Workspace slug"),
+		}, []string{"workspace"}),
+	}
+}
+
+// NewWorkspaceProjectsTool creates a tool definition for listing workspace projects.
+func NewWorkspaceProjectsTool() Tool {
+	return Tool{
+		Name:        "workspace_projects",
+		Title:       "List Workspace Projects",
+		Description: "List projects in a Bitbucket workspace",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"workspace": NewStringProperty("Workspace slug"),
+		}, []string{"workspace"}),
+	}
+}
+
+// NewWorkspaceProjectCreateTool creates a tool definition for creating a project.
+func NewWorkspaceProjectCreateTool() Tool {
+	return Tool{
+		Name:        "workspace_project_create",
+		Title:       "Create Workspace Project",
+		Description: "Create a new project in a Bitbucket workspace",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"workspace":   NewStringProperty("Workspace slug"),
+			"key":         NewStringProperty("Project key (short uppercase identifier)"),
+			"name":        NewStringProperty("Project name"),
+			"description": NewStringProperty("Optional project description"),
+			"is_private":  NewBooleanProperty("Optional: make project private (default: true)"),
+		}, []string{"workspace", "key", "name"}),
+	}
+}
+
+// NewWorkspacePermissionsTool creates a tool definition for listing workspace permissions.
+func NewWorkspacePermissionsTool() Tool {
+	return Tool{
+		Name:        "workspace_permissions",
+		Title:       "List Workspace Permissions",
+		Description: "List permissions in a Bitbucket workspace",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"workspace": NewStringProperty("Workspace slug"),
+		}, []string{"workspace"}),
+	}
+}
+
+// User Tool Definitions
+
+// NewUserMeTool creates a tool definition for viewing the current user.
+func NewUserMeTool() Tool {
+	return Tool{
+		Name:        "user_me",
+		Title:       "Current User",
+		Description: "Show the current authenticated Bitbucket user",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{}, nil),
+	}
+}
+
+// NewUserViewTool creates a tool definition for viewing a user profile.
+func NewUserViewTool() Tool {
+	return Tool{
+		Name:        "user_view",
+		Title:       "View User",
+		Description: "View a Bitbucket user's profile by UUID or username",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"user_id": NewStringProperty("User UUID or username"),
+		}, []string{"user_id"}),
+	}
+}
+
+// NewUserEmailsTool creates a tool definition for listing user emails.
+func NewUserEmailsTool() Tool {
+	return Tool{
+		Name:        "user_emails",
+		Title:       "List User Emails",
+		Description: "List email addresses of the current authenticated user",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{}, nil),
+	}
+}
+
+// NewUserSSHKeysTool creates a tool definition for listing SSH keys.
+func NewUserSSHKeysTool() Tool {
+	return Tool{
+		Name:        "user_ssh_keys",
+		Title:       "List SSH Keys",
+		Description: "List SSH keys of the current authenticated user",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{}, nil),
+	}
+}
+
+// NewUserSSHKeyAddTool creates a tool definition for adding an SSH key.
+func NewUserSSHKeyAddTool() Tool {
+	return Tool{
+		Name:        "user_ssh_key_add",
+		Title:       "Add SSH Key",
+		Description: "Add an SSH key to the current authenticated user's account",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"key":   NewStringProperty("SSH public key content"),
+			"label": NewStringProperty("Optional label for the key"),
+		}, []string{"key"}),
+	}
+}
+
+// Environment Tool Definitions
+
+// NewEnvironmentListTool creates a tool definition for listing environments.
+func NewEnvironmentListTool() Tool {
+	return Tool{
+		Name:        "environment_list",
+		Title:       "List Environments",
+		Description: "List deployment environments for a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewEnvironmentViewTool creates a tool definition for viewing an environment.
+func NewEnvironmentViewTool() Tool {
+	return Tool{
+		Name:        "environment_view",
+		Title:       "View Environment",
+		Description: "View details of a deployment environment",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository":       NewStringProperty("Repository in format workspace/repo-slug"),
+			"environment_uuid": NewStringProperty("Environment UUID"),
+		}, []string{"repository", "environment_uuid"}),
+	}
+}
+
+// NewEnvironmentCreateTool creates a tool definition for creating an environment.
+func NewEnvironmentCreateTool() Tool {
+	return Tool{
+		Name:        "environment_create",
+		Title:       "Create Environment",
+		Description: "Create a deployment environment in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository":       NewStringProperty("Repository in format workspace/repo-slug"),
+			"name":             NewStringProperty("Environment name"),
+			"environment_type": NewStringProperty("Environment type: Test, Staging, or Production"),
+		}, []string{"repository", "name", "environment_type"}),
+	}
+}
+
+// NewEnvironmentDeleteTool creates a tool definition for deleting an environment.
+func NewEnvironmentDeleteTool() Tool {
+	return Tool{
+		Name:        "environment_delete",
+		Title:       "Delete Environment",
+		Description: "Delete a deployment environment from a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository":       NewStringProperty("Repository in format workspace/repo-slug"),
+			"environment_uuid": NewStringProperty("Environment UUID"),
+		}, []string{"repository", "environment_uuid"}),
+	}
+}
+
+// Variable Tool Definitions
+
+// NewVariableListTool creates a tool definition for listing pipeline variables.
+func NewVariableListTool() Tool {
+	return Tool{
+		Name:        "variable_list",
+		Title:       "List Pipeline Variables",
+		Description: "List pipeline variables for a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewVariableGetTool creates a tool definition for getting a pipeline variable.
+func NewVariableGetTool() Tool {
+	return Tool{
+		Name:        "variable_get",
+		Title:       "Get Pipeline Variable",
+		Description: "Get a pipeline variable by key",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"key":        NewStringProperty("Variable key"),
+		}, []string{"repository", "key"}),
+	}
+}
+
+// NewVariableSetTool creates a tool definition for creating a pipeline variable.
+func NewVariableSetTool() Tool {
+	return Tool{
+		Name:        "variable_set",
+		Title:       "Create Pipeline Variable",
+		Description: "Create a new pipeline variable in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"key":        NewStringProperty("Variable key"),
+			"value":      NewStringProperty("Variable value"),
+			"secured":    NewBooleanProperty("Optional: mark variable as secured/encrypted (default: false)"),
+		}, []string{"repository", "key", "value"}),
+	}
+}
+
+// NewVariableUpdateTool creates a tool definition for updating a pipeline variable.
+func NewVariableUpdateTool() Tool {
+	return Tool{
+		Name:        "variable_update",
+		Title:       "Update Pipeline Variable",
+		Description: "Update an existing pipeline variable in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"key":        NewStringProperty("Variable key"),
+			"value":      NewStringProperty("New variable value"),
+			"secured":    NewBooleanProperty("Optional: mark variable as secured/encrypted (default: false)"),
+		}, []string{"repository", "key", "value"}),
+	}
+}
+
+// NewVariableDeleteTool creates a tool definition for deleting a pipeline variable.
+func NewVariableDeleteTool() Tool {
+	return Tool{
+		Name:        "variable_delete",
+		Title:       "Delete Pipeline Variable",
+		Description: "Delete a pipeline variable from a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"key":        NewStringProperty("Variable key"),
+		}, []string{"repository", "key"}),
+	}
+}
+
+// Download Tool Definitions
+
+// NewDownloadListTool creates a tool definition for listing repository downloads.
+func NewDownloadListTool() Tool {
+	return Tool{
+		Name:        "download_list",
+		Title:       "List Downloads",
+		Description: "List repository downloads in a Bitbucket repository",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+		}, []string{"repository"}),
+	}
+}
+
+// NewDownloadDeleteTool creates a tool definition for deleting a repository download.
+func NewDownloadDeleteTool() Tool {
+	return Tool{
+		Name:        "download_delete",
+		Title:       "Delete Download",
+		Description: "Delete a file from repository downloads",
+		InputSchema: NewJSONSchema("object", map[string]interface{}{
+			"repository": NewStringProperty("Repository in format workspace/repo-slug"),
+			"filename":   NewStringProperty("Filename to delete"),
+		}, []string{"repository", "filename"}),
+	}
+}
+
 // RegisterDefaultTools registers all default bb tools with the given registry.
-// This includes PR, Issue, Pipeline, Repo, Snippet, and Branch tools.
+// This includes PR, Issue, Pipeline, Repo, Snippet, Branch, Workspace, User, Environment, Variable, and Download tools.
 func RegisterDefaultTools(registry *ToolRegistry) error {
 	// PR Tools
 	if err := registry.Register(NewPRListTool(), PRListHandler); err != nil {
@@ -622,6 +949,15 @@ func RegisterDefaultTools(registry *ToolRegistry) error {
 	}
 	if err := registry.Register(NewPRCommentsListTool(), PRCommentsListHandler); err != nil {
 		return fmt.Errorf("failed to register pr_comments: %w", err)
+	}
+	if err := registry.Register(NewPREditTool(), PREditHandler); err != nil {
+		return fmt.Errorf("failed to register pr_edit: %w", err)
+	}
+	if err := registry.Register(NewPRUnapproveTool(), PRUnapproveHandler); err != nil {
+		return fmt.Errorf("failed to register pr_unapprove: %w", err)
+	}
+	if err := registry.Register(NewPRActivityTool(), PRActivityHandler); err != nil {
+		return fmt.Errorf("failed to register pr_activity: %w", err)
 	}
 
 	// Issue Tools
@@ -677,6 +1013,82 @@ func RegisterDefaultTools(registry *ToolRegistry) error {
 	// Branch Tools
 	if err := registry.Register(NewBranchListTool(), BranchListHandler); err != nil {
 		return fmt.Errorf("failed to register branch_list: %w", err)
+	}
+
+	// Workspace Tools
+	if err := registry.Register(NewWorkspaceListTool(), WorkspaceListHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_list: %w", err)
+	}
+	if err := registry.Register(NewWorkspaceViewTool(), WorkspaceViewHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_view: %w", err)
+	}
+	if err := registry.Register(NewWorkspaceMembersTool(), WorkspaceMembersHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_members: %w", err)
+	}
+	if err := registry.Register(NewWorkspaceProjectsTool(), WorkspaceProjectsHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_projects: %w", err)
+	}
+	if err := registry.Register(NewWorkspaceProjectCreateTool(), WorkspaceProjectCreateHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_project_create: %w", err)
+	}
+	if err := registry.Register(NewWorkspacePermissionsTool(), WorkspacePermissionsHandler); err != nil {
+		return fmt.Errorf("failed to register workspace_permissions: %w", err)
+	}
+
+	// User Tools
+	if err := registry.Register(NewUserMeTool(), UserMeHandler); err != nil {
+		return fmt.Errorf("failed to register user_me: %w", err)
+	}
+	if err := registry.Register(NewUserViewTool(), UserViewHandler); err != nil {
+		return fmt.Errorf("failed to register user_view: %w", err)
+	}
+	if err := registry.Register(NewUserEmailsTool(), UserEmailsHandler); err != nil {
+		return fmt.Errorf("failed to register user_emails: %w", err)
+	}
+	if err := registry.Register(NewUserSSHKeysTool(), UserSSHKeysHandler); err != nil {
+		return fmt.Errorf("failed to register user_ssh_keys: %w", err)
+	}
+	if err := registry.Register(NewUserSSHKeyAddTool(), UserSSHKeyAddHandler); err != nil {
+		return fmt.Errorf("failed to register user_ssh_key_add: %w", err)
+	}
+
+	// Environment Tools
+	if err := registry.Register(NewEnvironmentListTool(), EnvironmentListHandler); err != nil {
+		return fmt.Errorf("failed to register environment_list: %w", err)
+	}
+	if err := registry.Register(NewEnvironmentViewTool(), EnvironmentViewHandler); err != nil {
+		return fmt.Errorf("failed to register environment_view: %w", err)
+	}
+	if err := registry.Register(NewEnvironmentCreateTool(), EnvironmentCreateHandler); err != nil {
+		return fmt.Errorf("failed to register environment_create: %w", err)
+	}
+	if err := registry.Register(NewEnvironmentDeleteTool(), EnvironmentDeleteHandler); err != nil {
+		return fmt.Errorf("failed to register environment_delete: %w", err)
+	}
+
+	// Variable Tools
+	if err := registry.Register(NewVariableListTool(), VariableListHandler); err != nil {
+		return fmt.Errorf("failed to register variable_list: %w", err)
+	}
+	if err := registry.Register(NewVariableGetTool(), VariableGetHandler); err != nil {
+		return fmt.Errorf("failed to register variable_get: %w", err)
+	}
+	if err := registry.Register(NewVariableSetTool(), VariableSetHandler); err != nil {
+		return fmt.Errorf("failed to register variable_set: %w", err)
+	}
+	if err := registry.Register(NewVariableUpdateTool(), VariableUpdateHandler); err != nil {
+		return fmt.Errorf("failed to register variable_update: %w", err)
+	}
+	if err := registry.Register(NewVariableDeleteTool(), VariableDeleteHandler); err != nil {
+		return fmt.Errorf("failed to register variable_delete: %w", err)
+	}
+
+	// Download Tools
+	if err := registry.Register(NewDownloadListTool(), DownloadListHandler); err != nil {
+		return fmt.Errorf("failed to register download_list: %w", err)
+	}
+	if err := registry.Register(NewDownloadDeleteTool(), DownloadDeleteHandler); err != nil {
+		return fmt.Errorf("failed to register download_delete: %w", err)
 	}
 
 	return nil
