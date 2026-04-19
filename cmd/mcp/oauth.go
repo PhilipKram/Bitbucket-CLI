@@ -150,8 +150,9 @@ func (s *mcpSessionStore) popCode(code string) *oauthAuthCode {
 // defaultTokenExpiry is the lifetime (in seconds) advertised to MCP clients
 // via the expires_in field. A long expiry minimises re-authentication prompts
 // across Claude Code sessions. The server still refreshes the underlying
-// Bitbucket token proactively.
-const defaultTokenExpiry = 30 * 24 * 3600 // 30 days
+// Bitbucket token proactively, and the MCP refresh_token grant keeps the
+// session alive indefinitely as long as Bitbucket's refresh token is valid.
+const defaultTokenExpiry = 365 * 24 * 3600 // 1 year
 
 type sessionPersistence struct {
 	Sessions []*mcpSession            `json:"sessions"`
