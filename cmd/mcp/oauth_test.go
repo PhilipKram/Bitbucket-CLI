@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/PhilipKram/bitbucket-cli/internal/config"
 	mcpPkg "github.com/PhilipKram/bitbucket-cli/internal/mcp"
 )
 
@@ -644,6 +646,160 @@ func TestServeCommand_OAuthFlags(t *testing.T) {
 		if flag.DefValue != f.defValue {
 			t.Errorf("Expected --%s default '%s', got '%s'", f.name, f.defValue, flag.DefValue)
 		}
+	}
+}
+
+// --- Session lifetime / restart scenarios ---
+
+// TestSession_SurvivesServerRestart simulates the full "Claude Code across
+// MCP server restarts" flow, proving that:
+//   1. The bearer token advertised to Claude Code keeps working after restart.
+//   2. The refresh_token grant rotates bearer + MCP refresh token in sync
+//      with the underlying Bitbucket token.
+//   3. The rotated tokens are persisted and survive another restart.
+//   4. After refresh, the previous bearer is invalidated (single-use rotation).
+func TestSession_SurvivesServerRestart(t *testing.T) {
+	// Mock Bitbucket's token endpoint so refresh_token grant has something to call.
+	bbRefreshHits := 0
+	bb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bbRefreshHits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"access_token": "bb-access-rotated",
+			"refresh_token": "bb-refresh-rotated",
+			"token_type": "bearer",
+			"expires_in": 7200,
+			"scopes": "repository"
+		}`))
+	}))
+	defer bb.Close()
+	origTokenURL := config.TokenURL
+	config.TokenURL = bb.URL
+	defer func() { config.TokenURL = origTokenURL }()
+
+	dir := t.TempDir()
+	sessionsPath := filepath.Join(dir, "sessions.json")
+
+	// --- Phase 1: server boots, completes OAuth, persists session ---
+	store1 := newSessionStore("bb-key", "bb-secret", sessionsPath, "")
+	initialBearer := "bearer-from-initial-auth"
+	initialMCPRefresh := "mcp-refresh-initial"
+	// TokenExpiresAt far in the future so the middleware does NOT proactively
+	// refresh — we want to count only the explicit refresh_token grant call.
+	store1.putSession(&mcpSession{
+		BearerToken:     initialBearer,
+		AccessToken:     "bb-access-initial",
+		RefreshToken:    "bb-refresh-initial",
+		MCPRefreshToken: initialMCPRefresh,
+		TokenExpiresAt:  time.Now().Unix() + 3600,
+		ClientID:        "claude-code",
+	})
+
+	// --- Phase 2: server restart — new process, same disk ---
+	store2 := newSessionStore("bb-key", "bb-secret", sessionsPath, "")
+	if got := store2.getSession(initialBearer); got == nil {
+		t.Fatal("Bearer from before restart should still resolve to a session")
+	} else if got.MCPRefreshToken != initialMCPRefresh {
+		t.Errorf("MCP refresh token lost across restart: got %q", got.MCPRefreshToken)
+	}
+
+	// Claude Code makes an authenticated request — middleware must accept it.
+	reqOK := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	reqOK.Header.Set("Authorization", "Bearer "+initialBearer)
+	wOK := httptest.NewRecorder()
+	store2.sessionBearerAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(wOK, reqOK)
+	if wOK.Code != http.StatusOK {
+		t.Fatalf("Request with persisted bearer after restart: expected 200, got %d", wOK.Code)
+	}
+
+	// --- Phase 3: Claude Code refreshes the MCP session ---
+	body := "grant_type=refresh_token&refresh_token=" + initialMCPRefresh
+	reqR := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(body))
+	reqR.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqR.Form = nil
+	wR := httptest.NewRecorder()
+	oauthTokenHandler(store2)(wR, reqR)
+	if wR.Code != http.StatusOK {
+		t.Fatalf("refresh_token grant expected 200, got %d: %s", wR.Code, wR.Body.String())
+	}
+	if bbRefreshHits != 1 {
+		t.Errorf("Expected 1 Bitbucket refresh call, got %d", bbRefreshHits)
+	}
+
+	var refreshResp map[string]interface{}
+	_ = json.Unmarshal(wR.Body.Bytes(), &refreshResp)
+	newBearer, _ := refreshResp["access_token"].(string)
+	newMCPRefresh, _ := refreshResp["refresh_token"].(string)
+	expiresIn, _ := refreshResp["expires_in"].(float64)
+	if newBearer == "" || newBearer == initialBearer {
+		t.Errorf("Expected new rotated bearer, got %q (initial %q)", newBearer, initialBearer)
+	}
+	if newMCPRefresh == "" || newMCPRefresh == initialMCPRefresh {
+		t.Errorf("Expected rotated MCP refresh token, got %q", newMCPRefresh)
+	}
+	if int(expiresIn) != defaultTokenExpiry {
+		t.Errorf("Expected advertised expires_in=%d, got %v", defaultTokenExpiry, expiresIn)
+	}
+
+	// Old bearer must be revoked after rotation.
+	if store2.getSession(initialBearer) != nil {
+		t.Error("Old bearer should be invalidated after refresh_token grant")
+	}
+
+	// New session should carry the rotated Bitbucket credentials.
+	newSess := store2.getSession(newBearer)
+	if newSess == nil {
+		t.Fatal("New bearer should resolve to a session")
+	}
+	if newSess.AccessToken != "bb-access-rotated" {
+		t.Errorf("Expected rotated Bitbucket access token, got %q", newSess.AccessToken)
+	}
+	if newSess.RefreshToken != "bb-refresh-rotated" {
+		t.Errorf("Expected rotated Bitbucket refresh token, got %q", newSess.RefreshToken)
+	}
+
+	// --- Phase 4: another restart — rotated session must survive ---
+	store3 := newSessionStore("bb-key", "bb-secret", sessionsPath, "")
+	if got := store3.getSession(newBearer); got == nil {
+		t.Fatal("Rotated bearer should survive a second restart")
+	}
+	if got := store3.getSession(initialBearer); got != nil {
+		t.Error("Old bearer must stay invalidated across restart")
+	}
+
+	// Verify an authenticated request still works after the second restart.
+	reqOK2 := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+	reqOK2.Header.Set("Authorization", "Bearer "+newBearer)
+	wOK2 := httptest.NewRecorder()
+	store3.sessionBearerAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(wOK2, reqOK2)
+	if wOK2.Code != http.StatusOK {
+		t.Errorf("Request with rotated bearer after second restart: expected 200, got %d", wOK2.Code)
+	}
+}
+
+// TestSession_RegisteredClientsSurviveRestart verifies that dynamically
+// registered OAuth clients (Claude Code registers once on first connect)
+// don't need to re-register after an MCP server restart.
+func TestSession_RegisteredClientsSurviveRestart(t *testing.T) {
+	dir := t.TempDir()
+	sessionsPath := filepath.Join(dir, "sessions.json")
+
+	store1 := newSessionStore("bb-key", "bb-secret", sessionsPath, "")
+	store1.putClient(&oauthRegisteredClient{
+		ClientID:     "claude-code-client",
+		ClientName:   "Claude Code",
+		RedirectURIs: []string{"http://localhost:9999/callback"},
+	})
+
+	store2 := newSessionStore("bb-key", "bb-secret", sessionsPath, "")
+	if got := store2.getClient("claude-code-client"); got == nil {
+		t.Fatal("Registered client should survive restart")
+	} else if got.ClientName != "Claude Code" {
+		t.Errorf("Expected client name 'Claude Code', got %q", got.ClientName)
 	}
 }
 
