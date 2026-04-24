@@ -206,6 +206,10 @@ func TestOAuthMetadataHandler(t *testing.T) {
 	if metadata["registration_endpoint"] != "http://localhost:8181/oauth/register" {
 		t.Errorf("Expected registration endpoint, got %v", metadata["registration_endpoint"])
 	}
+	scopes, ok := metadata["scopes_supported"].([]interface{})
+	if !ok || len(scopes) == 0 {
+		t.Errorf("Expected non-empty scopes_supported, got %v", metadata["scopes_supported"])
+	}
 }
 
 func TestOAuthMetadataHandler_MethodNotAllowed(t *testing.T) {
@@ -233,6 +237,14 @@ func TestOAuthProtectedResourceHandler(t *testing.T) {
 
 	if resource["resource"] != "http://localhost:8181/mcp" {
 		t.Errorf("Expected resource http://localhost:8181/mcp, got %v", resource["resource"])
+	}
+	methods, ok := resource["bearer_methods_supported"].([]interface{})
+	if !ok || len(methods) != 1 || methods[0] != "header" {
+		t.Errorf("Expected bearer_methods_supported=[header], got %v", resource["bearer_methods_supported"])
+	}
+	scopes, ok := resource["scopes_supported"].([]interface{})
+	if !ok || len(scopes) == 0 {
+		t.Errorf("Expected non-empty scopes_supported, got %v", resource["scopes_supported"])
 	}
 }
 
@@ -273,6 +285,24 @@ func TestOAuthRegisterHandler(t *testing.T) {
 	}
 	if stored.ClientName != "test-client" {
 		t.Errorf("Expected stored ClientName 'test-client', got %s", stored.ClientName)
+	}
+
+	// The registration response must advertise both grants we actually
+	// support at /oauth/token. Dropping refresh_token here stops MCP clients
+	// from using the refresh grant, forcing a full browser flow on every
+	// restart.
+	grants, ok := result["grant_types"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected grant_types array, got %T", result["grant_types"])
+	}
+	seen := map[string]bool{}
+	for _, g := range grants {
+		if s, ok := g.(string); ok {
+			seen[s] = true
+		}
+	}
+	if !seen["authorization_code"] || !seen["refresh_token"] {
+		t.Errorf("Expected grant_types to include authorization_code and refresh_token, got %v", grants)
 	}
 }
 
@@ -646,6 +676,41 @@ func TestServeCommand_OAuthFlags(t *testing.T) {
 		if flag.DefValue != f.defValue {
 			t.Errorf("Expected --%s default '%s', got '%s'", f.name, f.defValue, flag.DefValue)
 		}
+	}
+}
+
+// TestRefreshTokenGrant_RejectsMismatchedClientID ensures an attacker holding
+// someone else's MCP refresh token can't use it under their own registered
+// client_id. RFC 6749 §6 requires the server to validate the client when
+// present in the request.
+func TestRefreshTokenGrant_RejectsMismatchedClientID(t *testing.T) {
+	store := newSessionStore("bb-key", "bb-secret", "", "")
+	store.putSession(&mcpSession{
+		BearerToken:     "b",
+		AccessToken:     "bb-access",
+		RefreshToken:    "bb-refresh",
+		MCPRefreshToken: "mcp-r",
+		TokenExpiresAt:  time.Now().Unix() + 3600,
+		ClientID:        "client-owner",
+	})
+
+	body := "grant_type=refresh_token&refresh_token=mcp-r&client_id=client-attacker"
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	oauthTokenHandler(store)(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("Expected 400 on client_id mismatch, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["error"] != "invalid_grant" {
+		t.Errorf("Expected error=invalid_grant, got %v", resp)
+	}
+	// The legitimate session must survive an attacker probe.
+	if store.getSession("b") == nil {
+		t.Error("owner's session should not be dropped by a failed impersonation attempt")
 	}
 }
 
