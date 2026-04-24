@@ -25,6 +25,20 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 }
 
+// bbScopesSupported lists the Bitbucket Cloud OAuth scope identifiers this
+// MCP server's tools rely on. Advertised in authorization-server and
+// protected-resource metadata (RFC 8414 / RFC 9728). The actual grant still
+// depends on what the operator configured on the Bitbucket OAuth consumer;
+// this list is informational for clients choosing which consumer to register.
+var bbScopesSupported = []string{
+	"account",
+	"repository",
+	"pullrequest",
+	"pipeline",
+	"issue",
+	"snippet",
+}
+
 // --- Session types ---
 
 type mcpSession struct {
@@ -71,9 +85,10 @@ type mcpSessionStore struct {
 	clients      map[string]*oauthRegisteredClient
 	pending      map[string]*oauthAuthRequest // keyed by BB state
 	codes        map[string]*oauthAuthCode
-	clientID     string // Bitbucket OAuth consumer key
-	clientSecret string // Bitbucket OAuth consumer secret
-	callbackURL  string // OAuth callback URL (Bitbucket redirects here after user authorizes)
+	clientID            string // Bitbucket OAuth consumer key
+	clientSecret        string // Bitbucket OAuth consumer secret
+	callbackURL         string // OAuth callback URL (Bitbucket redirects here after user authorizes)
+	resourceMetadataURL string // Absolute URL of the protected-resource metadata document (RFC 9728)
 }
 
 func newSessionStore(bbClientID, bbClientSecret, persistPath, callbackURL string) *mcpSessionStore {
@@ -213,18 +228,37 @@ func (s *mcpSessionStore) loadFromDisk() {
 // tokenRefreshBuffer is how many seconds before expiry we proactively refresh.
 const tokenRefreshBuffer = 300 // 5 minutes
 
+// wwwAuthenticate builds the WWW-Authenticate challenge header. When the
+// resource-metadata URL is known (RFC 9728), include it so clients can locate
+// the OAuth discovery document without guessing the path suffix.
+func (s *mcpSessionStore) wwwAuthenticate(extra string) string {
+	h := "Bearer"
+	if extra != "" {
+		h += " " + extra
+	}
+	if s.resourceMetadataURL != "" {
+		if extra != "" {
+			h += ", "
+		} else {
+			h += " "
+		}
+		h += fmt.Sprintf(`resource_metadata="%s"`, s.resourceMetadataURL)
+	}
+	return h
+}
+
 func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hdr := r.Header.Get("Authorization")
 		if !strings.HasPrefix(hdr, "Bearer ") {
-			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.Header().Set("WWW-Authenticate", s.wwwAuthenticate(""))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 		token := strings.TrimPrefix(hdr, "Bearer ")
 		sess := s.getSession(token)
 		if sess == nil {
-			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+			w.Header().Set("WWW-Authenticate", s.wwwAuthenticate(`error="invalid_token"`))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -241,7 +275,7 @@ func (s *mcpSessionStore) sessionBearerAuth(next http.Handler) http.Handler {
 				// If we know the token is expired (not just unknown), reject the request
 				// so Claude Code triggers re-authorization
 				if sess.TokenExpiresAt > 0 && time.Now().Unix() >= sess.TokenExpiresAt {
-					w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token", error_description="token expired and refresh failed"`)
+					w.Header().Set("WWW-Authenticate", s.wwwAuthenticate(`error="invalid_token", error_description="token expired and refresh failed"`))
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
@@ -280,6 +314,7 @@ func oauthMetadataHandler(baseURL string) http.HandlerFunc {
 			"grant_types_supported":                 []string{"authorization_code", "refresh_token"},
 			"code_challenge_methods_supported":       []string{"S256"},
 			"token_endpoint_auth_methods_supported": []string{"none"},
+			"scopes_supported":                       bbScopesSupported,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(metadata)
@@ -293,8 +328,10 @@ func oauthProtectedResourceHandler(baseURL, basePath string) http.HandlerFunc {
 			return
 		}
 		resource := map[string]interface{}{
-			"resource":              baseURL + basePath,
-			"authorization_servers": []string{baseURL},
+			"resource":                 baseURL + basePath,
+			"authorization_servers":    []string{baseURL},
+			"bearer_methods_supported": []string{"header"},
+			"scopes_supported":         bbScopesSupported,
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resource)
@@ -339,7 +376,7 @@ func oauthRegisterHandler(store *mcpSessionStore) http.HandlerFunc {
 			"client_id":                id,
 			"client_name":             req.ClientName,
 			"redirect_uris":           req.RedirectURIs,
-			"grant_types":             []string{"authorization_code"},
+			"grant_types":             []string{"authorization_code", "refresh_token"},
 			"response_types":          []string{"code"},
 			"token_endpoint_auth_method": "none",
 		}
@@ -590,6 +627,7 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, store *mcpS
 		jsonError(w, "invalid_request", "refresh_token is required", http.StatusBadRequest)
 		return
 	}
+	formClientID := r.FormValue("client_id")
 
 	// Find session by MCP refresh token
 	var sess *mcpSession
@@ -604,6 +642,15 @@ func handleRefreshTokenGrant(w http.ResponseWriter, r *http.Request, store *mcpS
 
 	if sess == nil {
 		jsonError(w, "invalid_grant", "Invalid refresh token", http.StatusBadRequest)
+		return
+	}
+
+	// If the client supplies client_id (RFC 6749 §6 requires it for public
+	// clients), it must match the one the refresh token was issued to.
+	// Missing client_id is tolerated for backwards-compatibility with clients
+	// that only present the refresh token.
+	if formClientID != "" && subtle.ConstantTimeCompare([]byte(formClientID), []byte(sess.ClientID)) != 1 {
+		jsonError(w, "invalid_grant", "client_id mismatch", http.StatusBadRequest)
 		return
 	}
 
@@ -718,12 +765,24 @@ func serveHTTPOAuth(host string, port int, basePath, bbClientID, bbClientSecret,
 	}
 
 	store.callbackURL = callbackURL
+	// Per RFC 9728, the resource-metadata URL is well-known + resource path.
+	store.resourceMetadataURL = baseURL + "/.well-known/oauth-protected-resource" + basePath
 
 	mux := http.NewServeMux()
 
-	// OAuth discovery endpoints
-	mux.HandleFunc("GET /.well-known/oauth-authorization-server", oauthMetadataHandler(baseURL))
-	mux.HandleFunc("GET /.well-known/oauth-protected-resource", oauthProtectedResourceHandler(baseURL, basePath))
+	// OAuth discovery endpoints.
+	// RFC 8414 / RFC 9728 require clients to insert the well-known path between
+	// host and the resource path, so for MCP at `{host}{basePath}` the discovery
+	// URL is `{host}/.well-known/oauth-*{basePath}`. We register both the bare
+	// and path-suffixed forms so every spec-compliant client finds them.
+	authMetadata := oauthMetadataHandler(baseURL)
+	resourceMetadata := oauthProtectedResourceHandler(baseURL, basePath)
+	mux.HandleFunc("GET /.well-known/oauth-authorization-server", authMetadata)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", resourceMetadata)
+	if basePath != "" && basePath != "/" {
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server"+basePath, authMetadata)
+		mux.HandleFunc("GET /.well-known/oauth-protected-resource"+basePath, resourceMetadata)
+	}
 
 	// OAuth flow endpoints on main server
 	mux.HandleFunc("POST /oauth/register", oauthRegisterHandler(store))
