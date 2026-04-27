@@ -374,8 +374,7 @@ func newCmdCreate() *cobra.Command {
 			if len(finalReviewers) > 0 {
 				revList := make([]map[string]string, len(finalReviewers))
 				for i, r := range finalReviewers {
-					normalizedUUID := cmdutil.NormalizeUUID(r)
-					revList[i] = map[string]string{"uuid": normalizedUUID}
+					revList[i] = map[string]string{"uuid": cmdutil.NormalizeUUIDForBody(r)}
 				}
 				body["reviewers"] = revList
 			}
@@ -846,6 +845,9 @@ func newCmdEdit() *cobra.Command {
 	var useEditor bool
 	var destination string
 	var closeBranch *bool
+	var reviewers []string
+	var addReviewers []string
+	var removeReviewers []string
 
 	cmd := &cobra.Command{
 		Use:   "edit <workspace/repo-slug> <pr-id>",
@@ -878,8 +880,21 @@ func newCmdEdit() *cobra.Command {
 				body["close_source_branch"] = *closeBranch
 			}
 
-			if len(body) == 0 {
-				return fmt.Errorf("no changes specified; use --title, --description, --destination, or --close-branch")
+			reviewerFlagUsed := cmd.Flags().Changed("reviewer") ||
+				cmd.Flags().Changed("add-reviewer") ||
+				cmd.Flags().Changed("remove-reviewer")
+
+			if cmd.Flags().Changed("reviewer") &&
+				(cmd.Flags().Changed("add-reviewer") || cmd.Flags().Changed("remove-reviewer")) {
+				return fmt.Errorf("--reviewer cannot be combined with --add-reviewer or --remove-reviewer")
+			}
+
+			if reviewerFlagUsed && len(body) == 0 && !cmd.Flags().Changed("title") {
+				// reviewer-only edit: we'll still need a client below
+			}
+
+			if len(body) == 0 && !reviewerFlagUsed {
+				return fmt.Errorf("no changes specified; use --title, --description, --destination, --close-branch, --reviewer, --add-reviewer, or --remove-reviewer")
 			}
 
 			client, err := api.NewClient()
@@ -887,8 +902,53 @@ func newCmdEdit() *cobra.Command {
 				return err
 			}
 
-			jsonBody, _ := json.Marshal(body)
 			path := fmt.Sprintf("/repositories/%s/pullrequests/%s", args[0], args[1])
+
+			if reviewerFlagUsed {
+				var finalUUIDs []string
+				if cmd.Flags().Changed("reviewer") {
+					finalUUIDs = dedupeUUIDs(reviewers)
+				} else {
+					currentData, err := client.Get(path)
+					if err != nil {
+						return err
+					}
+					var currentPR PullRequest
+					if err := json.Unmarshal(currentData, &currentPR); err != nil {
+						return err
+					}
+					existing := make([]string, 0, len(currentPR.Reviewers))
+					for _, r := range currentPR.Reviewers {
+						if r.UUID != "" {
+							existing = append(existing, r.UUID)
+						}
+					}
+					if len(addReviewers) > 0 {
+						existing = append(existing, addReviewers...)
+					}
+					if len(removeReviewers) > 0 {
+						removeSet := make(map[string]struct{}, len(removeReviewers))
+						for _, u := range removeReviewers {
+							removeSet[cmdutil.NormalizeUUID(u)] = struct{}{}
+						}
+						filtered := existing[:0]
+						for _, u := range existing {
+							if _, drop := removeSet[cmdutil.NormalizeUUID(u)]; !drop {
+								filtered = append(filtered, u)
+							}
+						}
+						existing = filtered
+					}
+					finalUUIDs = dedupeUUIDs(existing)
+				}
+				revList := make([]map[string]string, len(finalUUIDs))
+				for i, u := range finalUUIDs {
+					revList[i] = map[string]string{"uuid": cmdutil.NormalizeUUIDForBody(u)}
+				}
+				body["reviewers"] = revList
+			}
+
+			jsonBody, _ := json.Marshal(body)
 			data, err := client.Put(path, string(jsonBody))
 			if err != nil {
 				return err
@@ -908,6 +968,9 @@ func newCmdEdit() *cobra.Command {
 	cmd.Flags().BoolVarP(&useEditor, "editor", "e", false, "Open editor to compose description")
 	cmd.Flags().StringVar(&destination, "destination", "", "New destination branch")
 	closeBranch = cmd.Flags().Bool("close-branch", false, "Close source branch after merge")
+	cmd.Flags().StringSliceVarP(&reviewers, "reviewer", "r", nil, "Replace reviewers with this set (UUIDs, repeatable)")
+	cmd.Flags().StringSliceVar(&addReviewers, "add-reviewer", nil, "Add reviewer UUID (repeatable)")
+	cmd.Flags().StringSliceVar(&removeReviewers, "remove-reviewer", nil, "Remove reviewer UUID (repeatable)")
 	cmd.ValidArgsFunction = func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) == 0 {
 			return completion.RepositoryNamesWithDescriptions(cmd, args, toComplete)
@@ -918,6 +981,26 @@ func newCmdEdit() *cobra.Command {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	return cmd
+}
+
+// dedupeUUIDs returns the input slice with empty entries removed and
+// duplicates collapsed (comparison done on the normalized UUID form so that
+// "{abc}" and "abc" are treated as equal). Order is preserved.
+func dedupeUUIDs(in []string) []string {
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, u := range in {
+		if u == "" {
+			continue
+		}
+		key := cmdutil.NormalizeUUID(u)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, u)
+	}
+	return out
 }
 
 // fetchDefaultReviewers retrieves the repository's default reviewers from the Bitbucket API.
