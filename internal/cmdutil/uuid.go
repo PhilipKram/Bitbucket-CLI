@@ -38,6 +38,27 @@ func NormalizeUUID(uuid string) string {
 	return uuid
 }
 
+// NormalizeUUIDForBody returns a UUID in the literal-brace form expected by
+// Bitbucket JSON request bodies (e.g. `{abc-def-123}`). Unlike NormalizeUUID
+// — which URL-encodes braces for use in URL paths — this helper decodes any
+// `%7B`/`%7D` escapes so the JSON value contains real braces.
+//
+// Inputs without braces are passed through (Bitbucket accepts both forms in
+// bodies); inputs that already use literal braces are returned trimmed.
+func NormalizeUUIDForBody(uuid string) string {
+	uuid = strings.TrimSpace(uuid)
+	if uuid == "" {
+		return uuid
+	}
+	if strings.Contains(uuid, "%7B") || strings.Contains(uuid, "%7b") ||
+		strings.Contains(uuid, "%7D") || strings.Contains(uuid, "%7d") {
+		if decoded, err := url.PathUnescape(uuid); err == nil {
+			return decoded
+		}
+	}
+	return uuid
+}
+
 // ValidateUUID checks if a string looks like a valid Bitbucket UUID.
 // Returns an error if the UUID format appears invalid.
 func ValidateUUID(uuid string) error {

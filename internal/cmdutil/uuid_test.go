@@ -205,3 +205,20 @@ func TestValidateUUID_Valid(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeUUIDForBody(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"   ", ""},
+		{"{abc-123}", "{abc-123}"},
+		{"abc-123", "abc-123"},
+		{"%7Babc-123%7D", "{abc-123}"},
+		{"%7babc-123%7d", "{abc-123}"},
+		{"  {abc-123}  ", "{abc-123}"},
+	}
+	for _, c := range cases {
+		if got := NormalizeUUIDForBody(c.in); got != c.want {
+			t.Errorf("NormalizeUUIDForBody(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

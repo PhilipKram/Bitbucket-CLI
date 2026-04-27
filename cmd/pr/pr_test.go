@@ -784,3 +784,30 @@ func TestNewCmdDiff_Use(t *testing.T) {
 		t.Error("diff command should have Use field set")
 	}
 }
+
+func TestDedupeUUIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []string
+		want []string
+	}{
+		{"empty", nil, []string{}},
+		{"drops empty entries", []string{"", "{a}", ""}, []string{"{a}"}},
+		{"preserves order", []string{"{a}", "{b}", "{c}"}, []string{"{a}", "{b}", "{c}"}},
+		{"dedupes by normalized form", []string{"{a}", "%7Ba%7D", "{b}"}, []string{"{a}", "{b}"}},
+		{"dedupes plain duplicates", []string{"{x}", "{x}"}, []string{"{x}"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := dedupeUUIDs(c.in)
+			if len(got) != len(c.want) {
+				t.Fatalf("len(got)=%d want %d (%+v)", len(got), len(c.want), got)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Errorf("[%d] = %q, want %q", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
