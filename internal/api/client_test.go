@@ -1586,3 +1586,61 @@ func TestNewClientFromToken_NoRefresh(t *testing.T) {
 		t.Error("Expected empty OAuth credentials on token-based client")
 	}
 }
+
+func TestGetAllPaginated_FollowsNext(t *testing.T) {
+	type item struct {
+		Name string `json:"name"`
+	}
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page := r.URL.Query().Get("page")
+		switch page {
+		case "", "1":
+			w.WriteHeader(200)
+			fmt.Fprintf(w, `{"values":[{"name":"a"},{"name":"b"}],"next":"%s/things?page=2"}`, server.URL)
+		case "2":
+			w.WriteHeader(200)
+			fmt.Fprintf(w, `{"values":[{"name":"c"}],"next":"%s/things?page=3"}`, server.URL)
+		case "3":
+			w.WriteHeader(200)
+			fmt.Fprint(w, `{"values":[{"name":"d"}]}`)
+		default:
+			t.Fatalf("unexpected page=%q", page)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{AccessToken: "tok"})
+
+	got, err := getAllPaginatedFromURL[item](client, server.URL+"/things")
+	if err != nil {
+		t.Fatalf("getAllPaginatedFromURL error: %v", err)
+	}
+	want := []string{"a", "b", "c", "d"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d items, got %d (%+v)", len(want), len(got), got)
+	}
+	for i, w := range want {
+		if got[i].Name != w {
+			t.Errorf("item %d = %q, want %q", i, got[i].Name, w)
+		}
+	}
+}
+
+func TestGetAllPaginated_PropagatesAPIError(t *testing.T) {
+	type item struct {
+		Name string `json:"name"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		w.Write([]byte(`{"error":{"message":"boom"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClientWith(server.Client(), &config.Config{}, &config.TokenData{AccessToken: "tok"})
+
+	if _, err := getAllPaginatedFromURL[item](client, server.URL+"/things"); err == nil {
+		t.Fatal("expected error on 500 response, got nil")
+	}
+}
