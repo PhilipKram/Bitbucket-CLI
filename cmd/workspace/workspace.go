@@ -139,6 +139,7 @@ func newCmdView() *cobra.Command {
 
 func newCmdMembers() *cobra.Command {
 	var jsonOut bool
+	var fetchAll bool
 
 	cmd := &cobra.Command{
 		Use:   "members <workspace-slug>",
@@ -149,20 +150,27 @@ func newCmdMembers() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/workspaces/%s/members?pagelen=50", url.PathEscape(args[0]))
-			data, err := client.Get(path)
-			if err != nil {
-				return err
-			}
-
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
-			}
 
 			var members []WorkspaceMember
-			if err := json.Unmarshal(paginated.Values, &members); err != nil {
-				return err
+			if fetchAll {
+				path := fmt.Sprintf("/workspaces/%s/members?pagelen=100", url.PathEscape(args[0]))
+				members, err = api.GetAllPaginated[WorkspaceMember](client, path)
+				if err != nil {
+					return err
+				}
+			} else {
+				path := fmt.Sprintf("/workspaces/%s/members?pagelen=50", url.PathEscape(args[0]))
+				data, err := client.Get(path)
+				if err != nil {
+					return err
+				}
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(data, &paginated); err != nil {
+					return err
+				}
+				if err := json.Unmarshal(paginated.Values, &members); err != nil {
+					return err
+				}
 			}
 
 			if jsonOut {
@@ -180,11 +188,13 @@ func newCmdMembers() *cobra.Command {
 		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.Flags().BoolVar(&fetchAll, "all", false, "Fetch all pages (workspaces with >50 members)")
 	return cmd
 }
 
 func newCmdProjects() *cobra.Command {
 	var jsonOut bool
+	var fetchAll bool
 
 	cmd := &cobra.Command{
 		Use:   "projects <workspace-slug>",
@@ -195,20 +205,27 @@ func newCmdProjects() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := fmt.Sprintf("/workspaces/%s/projects?pagelen=50", url.PathEscape(args[0]))
-			data, err := client.Get(path)
-			if err != nil {
-				return err
-			}
-
-			var paginated api.PaginatedResponse
-			if err := json.Unmarshal(data, &paginated); err != nil {
-				return err
-			}
 
 			var projects []Project
-			if err := json.Unmarshal(paginated.Values, &projects); err != nil {
-				return err
+			if fetchAll {
+				path := fmt.Sprintf("/workspaces/%s/projects?pagelen=100", url.PathEscape(args[0]))
+				projects, err = api.GetAllPaginated[Project](client, path)
+				if err != nil {
+					return err
+				}
+			} else {
+				path := fmt.Sprintf("/workspaces/%s/projects?pagelen=50", url.PathEscape(args[0]))
+				data, err := client.Get(path)
+				if err != nil {
+					return err
+				}
+				var paginated api.PaginatedResponse
+				if err := json.Unmarshal(data, &paginated); err != nil {
+					return err
+				}
+				if err := json.Unmarshal(paginated.Values, &projects); err != nil {
+					return err
+				}
 			}
 
 			if jsonOut {
@@ -226,6 +243,7 @@ func newCmdProjects() *cobra.Command {
 		ValidArgsFunction: completion.WorkspaceNamesWithDescriptions,
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Output as JSON")
+	cmd.Flags().BoolVar(&fetchAll, "all", false, "Fetch all pages")
 	return cmd
 }
 

@@ -350,6 +350,49 @@ func GetPaginated[T any](c *Client, path string) ([]T, error) {
 	return result.Values, nil
 }
 
+// GetAllPaginated fetches every page of a paginated Bitbucket API endpoint by
+// following the `next` link in each response, and returns the concatenated
+// list of values decoded into []T.
+//
+// `path` is the relative API path (e.g. "/workspaces/foo/members?pagelen=100").
+// The helper follows absolute `next` URLs returned by the API; callers do not
+// need to manage page tokens.
+func GetAllPaginated[T any](c *Client, path string) ([]T, error) {
+	return getAllPaginatedFromURL[T](c, config.BitbucketAPI+path)
+}
+
+// getAllPaginatedFromURL is the internal pagination loop. It accepts an
+// absolute starting URL so it can be exercised by tests against a httptest
+// server.
+func getAllPaginatedFromURL[T any](c *Client, startURL string) ([]T, error) {
+	var all []T
+	nextURL := startURL
+	for nextURL != "" {
+		resp, err := c.doRequest("GET", nextURL, nil, "")
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read paginated response: %w", err)
+		}
+		if resp.StatusCode >= 400 {
+			return nil, errors.ParseAPIError(resp, body)
+		}
+		var page struct {
+			Next   string `json:"next"`
+			Values []T    `json:"values"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("failed to decode paginated response: %w", err)
+		}
+		all = append(all, page.Values...)
+		nextURL = page.Next
+	}
+	return all, nil
+}
+
 func handleResponse(resp *http.Response) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
