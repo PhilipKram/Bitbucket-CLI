@@ -285,7 +285,9 @@ bb issue watch myworkspace/myrepo 1
 bb workspace list
 bb workspace view myworkspace
 bb workspace members myworkspace
+bb workspace members myworkspace --all          # follow pagination (>50 members)
 bb workspace projects myworkspace
+bb workspace projects myworkspace --all         # follow pagination
 bb workspace project-create myworkspace --name "My Project"
 bb workspace permissions myworkspace
 ```
